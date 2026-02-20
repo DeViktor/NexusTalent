@@ -1,0 +1,592 @@
+{
+  "entities": {
+    "User": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "User",
+      "type": "object",
+      "description": "Represents a user of the NexusTalent platform.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the User entity."
+        },
+        "firstName": {
+          "type": "string",
+          "description": "The first name of the user."
+        },
+        "lastName": {
+          "type": "string",
+          "description": "The last name of the user."
+        },
+        "email": {
+          "type": "string",
+          "description": "The email address of the user.",
+          "format": "email"
+        },
+        "phoneNumber": {
+            "type": "string",
+            "description": "The user's phone number."
+        },
+        "userType": {
+          "type": "string",
+          "description": "The type of user (e.g., 'student', 'instructor', 'admin', 'recruiter').",
+          "enum": ["student", "instructor", "admin", "recruiter"]
+        },
+        "profilePictureUrl": {
+          "type": "string",
+          "description": "URL to the user's profile picture.",
+          "format": "uri"
+        },
+        "summary": {
+            "type": "string",
+            "description": "A brief professional summary about the user."
+        },
+        "resumeUrl": {
+          "type": "string",
+          "description": "URL to the user's resume/CV.",
+          "format": "uri"
+        },
+        "academicTitle": {
+          "type": "string",
+          "description": "The user's highest academic title."
+        },
+        "nationality": {
+          "type": "string",
+          "description": "The user's nationality."
+        },
+        "cidade": {
+            "type": "string",
+            "description": "The city where the user resides."
+        },
+        "dateOfBirth": {
+          "type": "string",
+          "description": "The user's date of birth.",
+          "format": "date"
+        },
+        "yearsOfExperience": {
+          "type": "number",
+          "description": "The user's total years of professional experience."
+        },
+        "functionalArea": {
+          "type": "string",
+          "description": "The primary functional area of the user's expertise."
+        },
+        "subFunctionalArea": {
+          "type": "string",
+          "description": "The sub-area of the user's expertise."
+        },
+        "professionalLevel": {
+          "type": "string",
+          "description": "The user's professional level (e.g., department head)."
+        },
+        "skills": {
+          "type": "array",
+          "description": "A list of the user's skills.",
+          "items": {
+            "type": "string"
+          }
+        },
+        "academicHistory": {
+            "type": "array",
+            "description": "The user's academic history.",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "institution": {"type": "string"},
+                    "degree": {"type": "string"},
+                    "year": {"type": "string"}
+                },
+                "required": ["institution", "degree", "year"]
+            }
+        },
+        "workExperience": {
+            "type": "array",
+            "description": "The user's professional work experience.",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "company": {"type": "string"},
+                    "role": {"type": "string"},
+                    "period": {"type": "string"},
+                    "description": {"type": "string"}
+                },
+                "required": ["company", "role", "period"]
+            }
+        },
+        "certifications": {
+            "type": "array",
+            "description": "A list of the user's certifications.",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string"},
+                    "issuingOrganization": {"type": "string"},
+                    "year": {"type": "string"}
+                },
+                "required": ["name", "issuingOrganization", "year"]
+            }
+        }
+      },
+      "required": [
+        "id",
+        "firstName",
+        "lastName",
+        "email",
+        "userType"
+      ]
+    },
+    "Course": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Course",
+      "type": "object",
+      "description": "Represents a course offered on the NexusTalent platform.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the Course entity."
+        },
+        "title": {
+          "type": "string",
+          "description": "The title of the course."
+        },
+        "code": {
+          "type": "string",
+          "description": "The unique course code (e.g., TA-001)."
+        },
+        "description": {
+          "type": "string",
+          "description": "A description of the course content."
+        },
+        "imageUrl": {
+          "type": "string",
+          "description": "URL to the course image.",
+          "format": "uri"
+        },
+        "category": {
+          "type": "string",
+          "description": "The category of the course (e.g., 'Finanças e Administração')."
+        },
+        "format": {
+          "type": "string",
+          "description": "The format of the course ('Online', 'Presencial', 'Híbrido').",
+          "enum": ["Online", "Presencial", "Híbrido"]
+        },
+        "trainerId": {
+          "type": "string",
+          "description": "Reference to User (Trainer). (Relationship: User 1:N Course)"
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "code",
+        "description",
+        "category",
+        "format"
+      ]
+    },
+    "CourseModule": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "CourseModule",
+      "type": "object",
+      "description": "Represents a module within a course.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the CourseModule entity."
+        },
+        "courseId": {
+          "type": "string",
+          "description": "Reference to Course. (Relationship: Course 1:N CourseModule)"
+        },
+        "title": {
+          "type": "string",
+          "description": "The title of the module."
+        },
+        "description": {
+          "type": "string",
+          "description": "A description of the module content."
+        },
+        "videoUrl": {
+          "type": "string",
+          "description": "URL to the module's video lesson.",
+          "format": "uri"
+        },
+        "order": {
+          "type": "number",
+          "description": "The order of the module within the course."
+        }
+      },
+      "required": [
+        "id",
+        "courseId",
+        "title",
+        "description",
+        "order"
+      ]
+    },
+    "Enrollment": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Enrollment",
+      "type": "object",
+      "description": "Represents a user's enrollment in a course.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the Enrollment entity."
+        },
+        "userId": {
+          "type": "string",
+          "description": "Reference to User. (Relationship: User 1:N Enrollment)"
+        },
+        "courseId": {
+          "type": "string",
+          "description": "Reference to Course. (Relationship: Course 1:N Enrollment)"
+        },
+        "enrollmentDate": {
+          "type": "string",
+          "description": "The date the user enrolled in the course.",
+          "format": "date-time"
+        },
+        "completionDate": {
+          "type": "string",
+          "description": "The date the user completed the course. Null if not completed.",
+          "format": "date-time"
+        },
+        "progress": {
+          "type": "number",
+          "description": "The user's progress in the course (e.g., percentage complete)."
+        }
+      },
+      "required": [
+        "id",
+        "userId",
+        "courseId",
+        "enrollmentDate"
+      ]
+    },
+    "JobPosting": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "JobPosting",
+      "type": "object",
+      "description": "Represents a job posting on the recruitment platform.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the JobPosting entity."
+        },
+        "recruiterId": {
+          "type": "string",
+          "description": "Reference to User (Recruiter). (Relationship: User 1:N JobPosting)"
+        },
+        "title": {
+          "type": "string",
+          "description": "The title of the job posting."
+        },
+        "description": {
+          "type": "string",
+          "description": "A detailed description of the job responsibilities."
+        },
+        "location": {
+          "type": "string",
+          "description": "The location of the job."
+        },
+        "salaryRange": {
+          "type": "string",
+          "description": "The salary range for the job."
+        },
+        "postedDate": {
+          "type": "string",
+          "description": "The date the job posting was created.",
+          "format": "date-time"
+        },
+        "closingDate": {
+          "type": "string",
+          "description": "The closing date for job applications.",
+          "format": "date-time"
+        },
+        "responsibilities": {
+            "type": "array",
+            "items": { "type": "string" }
+        },
+        "requirements": {
+            "type": "array",
+            "items": { "type": "string" }
+        },
+        "screeningQuestions": {
+          "type": "array",
+          "description": "A list of Yes/No screening questions with required answers.",
+          "items": {
+            "type": "object",
+            "properties": {
+              "question": {
+                "type": "string",
+                "description": "The text of the screening question."
+              },
+              "requiredAnswer": {
+                "type": "string",
+                "description": "The mandatory answer ('sim' ou 'nao') for the candidate to be considered.",
+                "enum": ["sim", "nao"]
+              }
+            },
+            "required": ["question", "requiredAnswer"]
+          }
+        }
+      },
+      "required": [
+        "id",
+        "recruiterId",
+        "title",
+        "description",
+        "location",
+        "postedDate"
+      ]
+    },
+    "Application": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Application",
+      "type": "object",
+      "description": "Represents a user's application to a job posting.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Composite unique identifier for the Application entity (userId_jobPostingId)."
+        },
+        "userId": {
+          "type": "string",
+          "description": "Reference to User (Applicant). (Relationship: User 1:N Application)"
+        },
+        "jobPostingId": {
+          "type": "string",
+          "description": "Reference to JobPosting. (Relationship: JobPosting 1:N Application)"
+        },
+        "applicationDate": {
+          "type": "string",
+          "description": "The date the application was submitted.",
+          "format": "date-time"
+        },
+        "status": {
+          "type": "string",
+          "description": "The current status of the application (e.g., 'Recebida', 'Em análise', 'Entrevistando', 'Oferta', 'Rejeitada').",
+          "enum": ["Recebida", "Em análise", "Entrevistando", "Oferta", "Rejeitada"]
+        },
+        "notes": {
+          "type": "string",
+          "description": "Any notes or comments about the application."
+        }
+      },
+      "required": [
+        "id",
+        "userId",
+        "jobPostingId",
+        "applicationDate",
+        "status"
+      ]
+    },
+     "Test": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Test",
+      "type": "object",
+      "description": "Represents an online assessment test for a job vacancy.",
+      "properties": {
+        "id": { "type": "string" },
+        "vacancyId": { "type": "string" },
+        "title": { "type": "string" },
+        "testType": { "type": "string", "enum": ["knowledge", "psychometric"] }
+      },
+      "required": ["id", "vacancyId", "title", "testType"]
+    },
+    "Question": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Question",
+      "type": "object",
+      "description": "Represents a single question within a test.",
+      "properties": {
+        "id": { "type": "string" },
+        "testId": { "type": "string" },
+        "questionText": { "type": "string" },
+        "questionType": { "type": "string", "enum": ["multiple-choice", "short-answer", "psychometric"] },
+        "options": { "type": "array", "items": { "type": "string" } },
+        "correctAnswerIndex": { "type": "number" }
+      },
+      "required": ["id", "testId", "questionText", "questionType"]
+    },
+    "CandidateTest": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "CandidateTest",
+      "type": "object",
+      "description": "Represents a candidate's session for a specific test.",
+      "properties": {
+        "id": { "type": "string" },
+        "candidateId": { "type": "string" },
+        "testId": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "started", "finished"] },
+        "score": { "type": "number" },
+        "startTime": { "type": "string", "format": "date-time" },
+        "endTime": { "type": "string", "format": "date-time" },
+        "tabSwitchCount": { "type": "number" }
+      },
+      "required": ["id", "candidateId", "testId", "status"]
+    }
+  },
+  "auth": {
+    "providers": [
+      "password",
+      "anonymous",
+      "google.com"
+    ],
+    "claims": {
+      "admin": {
+        "type": "boolean"
+      },
+      "recruiter": {
+        "type": "boolean"
+      },
+      "instructor": {
+        "type": "boolean"
+      }
+    }
+  },
+  "firestore": {
+    "structure": [
+      {
+        "path": "/users/{userId}",
+        "definition": {
+          "entityName": "User",
+          "schema": {
+            "$ref": "#/backend/entities/User"
+          },
+          "description": "Stores user profiles. Each document represents a user. The userType field is used to determine the user's role (candidate, trainer, recruiter, admin).",
+          "params": [
+            {
+              "name": "userId",
+              "description": "The unique identifier for the user."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/courses/{courseId}",
+        "definition": {
+          "entityName": "Course",
+          "schema": {
+            "$ref": "#/backend/entities/Course"
+          },
+          "description": "Stores course information. Includes trainerId to link the course to the trainer.",
+          "params": [
+            {
+              "name": "courseId",
+              "description": "The unique identifier for the course."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/courses/{courseId}/modules/{moduleId}",
+        "definition": {
+          "entityName": "CourseModule",
+          "schema": {
+            "$ref": "#/backend/entities/CourseModule"
+          },
+          "description": "Stores modules for each course.",
+          "params": [
+            {
+              "name": "courseId",
+              "description": "The unique identifier for the course."
+            },
+            {
+              "name": "moduleId",
+              "description": "The unique identifier for the module."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/enrollments/{enrollmentId}",
+        "definition": {
+          "entityName": "Enrollment",
+          "schema": {
+            "$ref": "#/backend/entities/Enrollment"
+          },
+          "description": "Stores enrollment records. Includes userId and courseId for efficient queries.",
+          "params": [
+            {
+              "name": "enrollmentId",
+              "description": "The unique identifier for the enrollment."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/vacancies/{vacancyId}",
+        "definition": {
+          "entityName": "JobPosting",
+          "schema": {
+            "$ref": "#/backend/entities/JobPosting"
+          },
+          "description": "Stores job postings. Includes recruiterId to track which recruiter created the posting.",
+          "params": [
+            {
+              "name": "vacancyId",
+              "description": "The unique identifier for the job posting."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/applications/{applicationId}",
+        "definition": {
+          "entityName": "Application",
+          "schema": {
+            "$ref": "#/backend/entities/Application"
+          },
+          "description": "Stores job applications. The document ID is a composite of `userId_jobPostingId` to enforce uniqueness and simplify security rules.",
+          "params": [
+            {
+              "name": "applicationId",
+              "description": "The composite unique identifier for the application (userId_jobPostingId)."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/vacancies/{vacancyId}/tests/{testId}",
+        "definition": {
+          "entityName": "Test",
+          "schema": { "$ref": "#/entities/Test" },
+          "description": "Stores assessment tests created for a specific vacancy.",
+          "params": [
+            { "name": "vacancyId" },
+            { "name": "testId" }
+          ]
+        }
+      },
+      {
+        "path": "/vacancies/{vacancyId}/tests/{testId}/questions/{questionId}",
+        "definition": {
+          "entityName": "Question",
+          "schema": { "$ref": "#/entities/Question" },
+          "description": "Stores all questions for a given test.",
+          "params": [
+            { "name": "vacancyId" },
+            { "name": "testId" },
+            { "name": "questionId" }
+          ]
+        }
+      },
+      {
+        "path": "/candidateTests/{candidateTestId}",
+        "definition": {
+          "entityName": "CandidateTest",
+          "schema": { "$ref": "#/entities/CandidateTest" },
+          "description": "Tracks the state of a candidate's test session, including score and anti-fraud metrics.",
+          "params": [
+            { "name": "candidateTestId" }
+          ]
+        }
+      }
+    ],
+    "reasoning": "This Firestore data structure is designed to support the NexusTalent platform, encompassing online courses, recruitment, and candidate management. The structure prioritizes authorization independence via denormalization, structural segregation for homogenous security postures, and standardized access modeling. \n\n**Authorization Independence:**\n*   For entities nested under users (e.g., enrollments, applications), the `userId` is inherently part of the path, providing implicit ownership. For collaborative data (e.g., job postings accessible to recruiters), the `recruiterId` is stored as a field in the document.\n*   Courses store the `trainerId` to allow easy filtering of courses by trainers. The Enrollment entity also includes the `userId` and `courseId` for easier querying of enrollments by user or course.\n\n**Structural Segregation:**\n*   User data is stored under `/users/{userId}`, clearly delineating ownership. Courses are stored in a top-level `/courses` collection, and modules are nested under `/courses/{courseId}/modules`. Similarly, job postings are stored in `/jobPostings/{jobPostingId}` and applications under `/applications/{applicationId}`. Enrollments are stored in the `/enrollments` collection.\n*   User roles are managed through the `userType` field within the `/users/{userId}` document. Admins can be identified by querying this field.\n\n**QAPs (Rules are not Filters):**\n*   The structure supports secure `list` operations by ensuring that each collection contains documents with a homogeneous security posture. For example, only a user can list their own enrollments, and only recruiters can list job postings they created. This prevents the need for complex filtering in security rules.\n\n**Invariants:**\n*   Ownership is enforced through path-based security rules for user-owned data. Timestamps can be enforced using server timestamps and validation rules. Denormalized data like `userId` and `courseId` in the `enrollments` collection allows efficient querying and maintains data integrity.\n\n**Admin privileges:**\n*   Admins can be handled by checking the `userType` attribute inside the `/users/{userId}`. This information can be secured and only modified via backend processes.\n\nThis design ensures that security rules are simple, robust, and easily debuggable by leveraging Firestore's hierarchical structure and denormalization strategies."
+  }
+}
+    

@@ -1,0 +1,14 @@
+{
+  "Header": {
+    "courses": "Courses",
+    "vacancies": "Vacancies",
+    "about": "About Us",
+    "blog": "Blog"
+  },
+  "Footer": {
+    "platform": "Platform",
+    "company": "Company",
+    "resources": "Resources",
+    "rights": "All rights reserved."
+  }
+}
