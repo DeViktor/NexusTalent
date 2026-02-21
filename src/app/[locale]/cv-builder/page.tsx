@@ -6,7 +6,7 @@ import { Footer } from '@/components/layout/footer';
 import { Button } from '@/components/ui/button';
 import { ArrowLeft, Download, Save, Edit, Loader2 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { users, updateUser } from '@/lib/users';
+import { supabase } from '@/lib/supabase/client';
 import { useEffect, useState, useRef } from 'react';
 import { useForm, useFieldArray, SubmitHandler } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -19,7 +19,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { PlusCircle, Trash2 } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
-import { CvPreviewTemplate } from '@/components/cv/cv-preview-template';
+import { CvPreviewTemplate } from '@/components/cv/CvPreviewTemplate';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
 import { Label } from '@/components/ui/label';
@@ -82,51 +82,88 @@ export default function CVBuilderPage() {
 
   useEffect(() => {
     let active = true;
-    const loadSession = async () => {
+    const load = async () => {
       try {
-        const res = await fetch('/api/auth/session');
+        const res = await fetch('/api/auth/session', { cache: 'no-store' });
         const json = await res.json();
         if (!active) return;
-        if (json?.ok && json?.user) {
-          setUser(json.user);
-          const userProfile = users.find(u => u.id === json.user.id);
-          if (userProfile) {
-            setProfile(userProfile);
-            form.reset({
-              ...userProfile,
-              profilePictureUrl: userProfile.profilePictureUrl || json.user.photoURL || '',
-              skills: userProfile.skills?.map(s => ({ value: s }))
-            });
-          }
-        } else {
+        if (!json?.ok || !json?.user) {
           router.push('/login');
+          return;
         }
-      } catch {
-        router.push('/login');
+        setUser(json.user);
+        try {
+          const { data } = await supabase
+            .from('users')
+            .select('*')
+            .eq('id', json.user.id)
+            .single();
+          const fullName: string = data?.name || json.user.displayName || '';
+          const [firstName, ...rest] = fullName.split(' ');
+          const lastName = rest.join(' ');
+          const mapped: Partial<CvFormValues> = {
+            firstName: firstName || '',
+            lastName: lastName || '',
+            email: data?.email || json.user.email || '',
+            academicTitle: (data as any)?.academic_title || '',
+            phoneNumber: (data as any)?.phone_number || '',
+            cidade: (data as any)?.cidade || '',
+            summary: data?.bio || '',
+            profilePictureUrl: (data as any)?.profile_picture_url || json.user.photoURL || '',
+          };
+          setProfile({
+            id: json.user.id,
+            firstName: mapped.firstName || '',
+            lastName: mapped.lastName || '',
+            email: mapped.email || '',
+            userType: (json.user.role || 'student') as any,
+          });
+          form.reset(mapped as CvFormValues);
+        } catch {
+          // Sem perfil na tabela: inicializa com dados mínimos da sessão
+          setProfile({
+            id: json.user.id,
+            firstName: json.user.displayName || '',
+            lastName: '',
+            email: json.user.email || '',
+            userType: (json.user.role || 'student') as any,
+          });
+          form.reset({
+            firstName: json.user.displayName || '',
+            lastName: '',
+            email: json.user.email || '',
+            academicTitle: '',
+          } as any);
+        }
       } finally {
         if (active) setIsUserLoading(false);
       }
     };
-    loadSession();
-    return () => { active = false; };
+    load();
+    return () => { active = false };
   }, [form, router]);
 
   const handleSave: SubmitHandler<CvFormValues> = async (data) => {
     if (!profile) return;
     setIsSaving(true);
-    const updatedProfileData = {
-        ...profile,
-        ...data,
-        skills: data.skills?.map(s => s.value).filter(Boolean) || [],
-    };
     try {
-        const updated = updateUser(profile.id, updatedProfileData);
-        setProfile(updated);
-        toast({ title: "Perfil Salvo!", description: "As suas informações foram atualizadas." });
-    } catch(e) {
-        toast({ variant: 'destructive', title: "Erro", description: "Não foi possível guardar o perfil." });
+      const name = `${data.firstName || ''} ${data.lastName || ''}`.trim();
+      const updates: any = {
+        name,
+        email: data.email,
+        bio: data.summary || null,
+        phone_number: data.phoneNumber || null,
+        cidade: data.cidade || null,
+        academic_title: data.academicTitle || null,
+        profile_picture_url: data.profilePictureUrl || null,
+        skills: Array.isArray(data.skills) ? data.skills.map(s => s.value).filter(Boolean) : null,
+      };
+      await supabase.from('users').update(updates).eq('id', profile.id);
+      toast({ title: 'Perfil Salvo!', description: 'As suas informações foram atualizadas.' });
+    } catch (e) {
+      toast({ variant: 'destructive', title: 'Erro', description: 'Não foi possível guardar o perfil.' });
     } finally {
-        setIsSaving(false);
+      setIsSaving(false);
     }
   };
   
@@ -178,7 +215,7 @@ const handleDownloadPdf = async () => {
 };
 
 
-  if (isUserLoading || !profile) {
+  if (isUserLoading) {
     return (
         <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-12">
             <Skeleton className="h-screen w-full" />
