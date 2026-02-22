@@ -116,7 +116,7 @@ export default function ProfilePage() {
                         return;
                     }
                 } else {
-                    const fullName = (authUser.user_metadata?.name as string) || '';
+            const fullName = (authUser.user_metadata?.name as string) || '';
                     await upsertUser({
                         id: authUser.id,
                         email: authUser.email || '',

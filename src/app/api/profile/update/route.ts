@@ -46,19 +46,18 @@ export async function POST(req: Request) {
     const keys: string[] = existingRow ? Object.keys(existingRow) : [];
     const has = (k: string) => keys.includes(k);
 
-    if (fullName) {
+    // Preferir SEMPRE colunas first_name/last_name quando existirem
+    const fnPref = firstName || (fullName ? fullName.split(' ')[0] : undefined);
+    const lnPref = lastName || (fullName ? fullName.split(' ').slice(1).join(' ') : undefined);
+    if (has('first_name') && typeof fnPref === 'string') updates.first_name = fnPref;
+    if (has('last_name') && typeof lnPref === 'string') updates.last_name = lnPref;
+
+    // Fallback para esquemas antigos somente se first/last não existirem
+    if (!has('first_name') && !has('last_name') && fullName) {
       if (has('name')) updates.name = fullName;
       else if (has('full_name')) updates.full_name = fullName;
       else if (has('fullname')) updates.fullname = fullName;
       else if (has('display_name')) updates.display_name = fullName;
-      else {
-        // Fall back to first_name/last_name if exist
-        const [fn, ...lnParts] = fullName.split(' ');
-        const ln = lnParts.join(' ');
-        if (has('first_name')) updates.first_name = fn;
-        if (has('last_name')) updates.last_name = ln;
-        // se nenhuma coluna de nome existir, ignoramos o nome para evitar erro
-      }
     }
 
     if (email) {

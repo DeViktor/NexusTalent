@@ -98,18 +98,18 @@ export default function CVBuilderPage() {
             .select('*')
             .eq('id', json.user.id)
             .single();
-          const fullName: string = data?.name || json.user.displayName || '';
-          const [firstName, ...rest] = fullName.split(' ');
-          const lastName = rest.join(' ');
+          const anyRow: any = data || {};
+          const fn = anyRow.first_name || (anyRow.name || anyRow.full_name || json.user.displayName || '').split(' ')[0] || '';
+          const ln = anyRow.last_name || (anyRow.name || anyRow.full_name || json.user.displayName || '').split(' ').slice(1).join(' ') || '';
           const mapped: Partial<CvFormValues> = {
-            firstName: firstName || '',
-            lastName: lastName || '',
-            email: data?.email || json.user.email || '',
-            academicTitle: (data as any)?.academic_title || '',
-            phoneNumber: (data as any)?.phone_number || '',
-            cidade: (data as any)?.cidade || '',
-            summary: data?.bio || '',
-            profilePictureUrl: (data as any)?.profile_picture_url || json.user.photoURL || '',
+            firstName: fn,
+            lastName: ln,
+            email: anyRow.email || json.user.email || '',
+            academicTitle: anyRow.academic_title || '',
+            phoneNumber: anyRow.phone_number || '',
+            cidade: anyRow.cidade || '',
+            summary: anyRow.bio || '',
+            profilePictureUrl: anyRow.profile_picture_url || anyRow.avatar_url || json.user.photoURL || '',
           };
           setProfile({
             id: json.user.id,
