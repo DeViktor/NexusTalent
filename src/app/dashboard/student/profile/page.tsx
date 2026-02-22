@@ -189,22 +189,26 @@ export default function ProfilePage() {
         };
 
         try {
-            const fullName = `${finalData.firstName} ${finalData.lastName}`.trim();
-            const updatedRow = await updateUserRow(profileToSave.id, {
-                name: fullName,
-                role: 'student',
-                email: profileToSave.email,
-                avatar_url: profileToSave.profilePictureUrl,
-                // Nota: Campos adicionais (skills, experiências) não existem na tabela atual
+            const res = await fetch('/api/profile/update', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    firstName: finalData.firstName,
+                    lastName: finalData.lastName,
+                    email: profileToSave.email,
+                    profilePictureUrl: profileToSave.profilePictureUrl,
+                    academicHistory: finalData.academicHistory || [],
+                    workExperience: finalData.workExperience || [],
+                })
             });
-
-            if (updatedRow) {
-                setUserProfile(profileToSave);
-                toast({ title: 'Sucesso!', description: 'O seu perfil foi atualizado.' });
-                setIsEditing(false);
-            } else {
-                throw new Error('Não foi possível atualizar o perfil no Supabase.');
+            const json = await res.json().catch(() => ({}));
+            if (!res.ok || !json?.ok) {
+                throw new Error(json?.error || 'Falha ao atualizar o perfil');
             }
+
+            setUserProfile(profileToSave);
+            toast({ title: 'Sucesso!', description: 'O seu perfil foi atualizado.' });
+            setIsEditing(false);
         } catch (error) {
             toast({ title: 'Erro', description: error instanceof Error ? error.message : 'Falha ao salvar o perfil.' });
         }
