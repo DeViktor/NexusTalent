@@ -85,13 +85,17 @@ export default function ProfilePage() {
     useEffect(() => {
         const loadAuthUser = async () => {
             try {
-                const { data } = await supabase.auth.getUser();
-                const u = data.user;
-                if (!u) {
-                    router.replace('/login');
+                const res = await fetch('/api/auth/session', { cache: 'no-store' });
+                if (!res.ok) {
+                    setAuthUser(null);
                     return;
                 }
-                setAuthUser({ id: u.id, email: u.email || '', user_metadata: u.user_metadata });
+                const json = await res.json();
+                if (json?.ok && json?.user) {
+                    setAuthUser({ id: json.user.id, email: json.user.email || '', user_metadata: { name: json.user.displayName || '' } });
+                } else {
+                    setAuthUser(null);
+                }
             } finally {
                 setIsUserLoading(false);
             }
@@ -133,6 +137,7 @@ export default function ProfilePage() {
                     setIsEditing(true);
                 }
             } else if (!isUserLoading && !authUser) {
+                // Usuário não autenticado via sessão da app
                 router.replace('/login');
             }
             setIsProfileLoading(false);
