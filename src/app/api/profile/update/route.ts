@@ -98,10 +98,10 @@ export async function POST(req: Request) {
     let updatedRow: any = null;
     let lastErr: any = null;
 
-    // Escolher melhor coluna para localizar o utilizador
+    // Escolher melhor coluna para localizar o utilizador (preferir ID por unicidade)
     const filter: { col: string; val: string } | null = (() => {
-      if (availableEmailCol && payload.email) return { col: availableEmailCol, val: payload.email };
       if (availableIdCol) return { col: availableIdCol, val: payload.userId };
+      if (availableEmailCol && payload.email) return { col: availableEmailCol, val: payload.email };
       return null;
     })();
 
@@ -111,10 +111,10 @@ export async function POST(req: Request) {
         .from('users')
         .update(u)
         .eq(filter.col, filter.val)
-        .select('*')
-        .single();
+        .select('*');
       if (error) throw error;
-      return data;
+      if (Array.isArray(data)) return data[0] ?? null;
+      return data ?? null;
     }
 
     try {
@@ -159,27 +159,79 @@ export async function POST(req: Request) {
       for (const name of candidates) {
         try {
           const r = await (admin as any).from(name).select('*').limit(1);
-          if (!r.error) return name;
+          if (!r.error) return { table: name, sample: Array.isArray(r.data) ? r.data[0] : null } as { table: string; sample: any };
         } catch {}
       }
-      return null;
+      return null as any;
     }
 
     if (Array.isArray(academicHistory)) {
-      const table = await resolveTable(['user_academic_history','academic_history','user_educations','educations']);
-      if (table) {
-        await (admin as any).from(table).delete().eq('user_id', payload.userId);
-        const rows = academicHistory.map(h => ({ user_id: payload.userId, institution: h.institution, degree: h.degree, year: h.year || null }));
-        if (rows.length > 0) await (admin as any).from(table).insert(rows);
+      const info = await resolveTable(['user_academic_history','academic_history','user_educations','educations']);
+      if (info?.table) {
+        const cols = info.sample ? Object.keys(info.sample) : [];
+        const has = (k: string) => cols.includes(k);
+        await (admin as any).from(info.table).delete().eq('user_id', payload.userId);
+        const rows = academicHistory.map(h => {
+          const row: any = {};
+          if (has('user_id')) row.user_id = payload.userId;
+          if (has('institution')) row.institution = h.institution;
+          if (has('school')) row.school = h.institution;
+          if (has('degree')) row.degree = h.degree;
+          if (has('course')) row.course = h.degree;
+          const yr = h.year ? parseInt(h.year, 10) : null;
+          if (has('year')) row.year = Number.isFinite(yr as any) ? yr : h.year || null;
+          if (!has('year')) {
+            if (has('start_year')) row.start_year = Number.isFinite(yr as any) ? yr : null;
+            if (has('end_year')) row.end_year = Number.isFinite(yr as any) ? yr : null;
+          }
+          return row;
+        });
+        const valid = rows.map(r => {
+          // mantém ao menos user_id + algum outro campo
+          const keys = Object.keys(r);
+          return keys.length >= 2 ? r : null;
+        }).filter(Boolean);
+        if (valid.length > 0) await (admin as any).from(info.table).insert(valid);
       }
     }
 
     if (Array.isArray(workExperience)) {
-      const table = await resolveTable(['user_work_experience','work_experience','user_experiences','experiences']);
-      if (table) {
-        await (admin as any).from(table).delete().eq('user_id', payload.userId);
-        const rows = workExperience.map(w => ({ user_id: payload.userId, company: w.company, role: w.role, period: w.period, description: w.description || null }));
-        if (rows.length > 0) await (admin as any).from(table).insert(rows);
+      const info = await resolveTable(['user_work_experience','work_experience','user_experiences','experiences']);
+      if (info?.table) {
+        const cols = info.sample ? Object.keys(info.sample) : [];
+        const has = (k: string) => cols.includes(k);
+        await (admin as any).from(info.table).delete().eq('user_id', payload.userId);
+        const rows = workExperience.map(w => {
+          const row: any = {};
+          if (has('user_id')) row.user_id = payload.userId;
+          if (has('company')) row.company = w.company;
+          if (has('employer')) row.employer = w.company;
+          if (has('role')) row.role = w.role;
+          if (has('title')) row.title = w.role;
+          if (has('position')) row.position = w.role;
+          if (has('description')) row.description = w.description || null;
+          if (has('summary')) row.summary = w.description || null;
+          // período: se existir campo simples 'period', usar string; caso contrário, mapear inicio/fim se disponíveis
+          if (has('period')) row.period = w.period;
+          const range = (w.period || '').match(/(\d{4})\D+(\d{4})/);
+          const startYear = range ? parseInt(range[1], 10) : undefined;
+          const endYear = range ? parseInt(range[2], 10) : undefined;
+          if (!has('period')) {
+            if (has('start_year')) row.start_year = Number.isFinite(startYear as any) ? startYear : null;
+            if (has('end_year')) row.end_year = Number.isFinite(endYear as any) ? endYear : null;
+          }
+          if (has('start_date') || has('end_date')) {
+            // se houver colunas de data, deixamos nulo quando não inferível
+            if (has('start_date') && startYear) row.start_date = `${startYear}-01-01`;
+            if (has('end_date') && endYear) row.end_date = `${endYear}-12-31`;
+          }
+          return row;
+        });
+        const valid = rows.map(r => {
+          const keys = Object.keys(r);
+          return keys.length >= 2 ? r : null;
+        }).filter(Boolean);
+        if (valid.length > 0) await (admin as any).from(info.table).insert(valid);
       }
     }
 
