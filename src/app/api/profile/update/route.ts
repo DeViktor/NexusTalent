@@ -32,18 +32,35 @@ export async function POST(req: Request) {
     const updates: Record<string, any> = {};
 
     const admin = getServerSupabase();
-    // Descobrir colunas existentes da tabela users para construir o payload correto
-    let existingRow: any = null;
+    // Descobrir colunas disponíveis e localizar a linha do utilizador
+    let sampleRow: any = null;
     try {
-      const probe = await (admin as any)
-        .from('users')
-        .select('*')
-        .eq('id', payload.userId)
-        .single();
-      if (!probe.error) existingRow = probe.data;
+      const sample = await (admin as any).from('users').select('*').limit(1);
+      if (!sample.error && Array.isArray(sample.data) && sample.data[0]) sampleRow = sample.data[0];
     } catch {}
 
-    const keys: string[] = existingRow ? Object.keys(existingRow) : [];
+    const sampleKeys: string[] = sampleRow ? Object.keys(sampleRow) : [];
+    const sampleHas = (k: string) => sampleKeys.includes(k);
+    const emailCols = ['email','user_email','mail'];
+    const idCols = ['id','user_id','uid'];
+    const availableEmailCol = emailCols.find(c => sampleHas(c));
+    const availableIdCol = idCols.find(c => sampleHas(c));
+
+    let existingRow: any = null;
+    if (availableEmailCol && payload.email) {
+      try {
+        const byEmail = await (admin as any).from('users').select('*').eq(availableEmailCol, payload.email).single();
+        if (!byEmail.error) existingRow = byEmail.data;
+      } catch {}
+    }
+    if (!existingRow && availableIdCol) {
+      try {
+        const byId = await (admin as any).from('users').select('*').eq(availableIdCol, payload.userId).single();
+        if (!byId.error) existingRow = byId.data;
+      } catch {}
+    }
+
+    const keys: string[] = existingRow ? Object.keys(existingRow) : (sampleRow ? Object.keys(sampleRow) : []);
     const has = (k: string) => keys.includes(k);
 
     // Preferir SEMPRE colunas first_name/last_name quando existirem
@@ -81,11 +98,19 @@ export async function POST(req: Request) {
     let updatedRow: any = null;
     let lastErr: any = null;
 
+    // Escolher melhor coluna para localizar o utilizador
+    const filter: { col: string; val: string } | null = (() => {
+      if (availableEmailCol && payload.email) return { col: availableEmailCol, val: payload.email };
+      if (availableIdCol) return { col: availableIdCol, val: payload.userId };
+      return null;
+    })();
+
     async function tryUpdate(u: Record<string, any>) {
+      if (!filter) throw new Error('Não foi possível identificar chave para localizar o utilizador');
       const { data, error } = await (admin as any)
         .from('users')
         .update(u)
-        .eq('id', payload.userId)
+        .eq(filter.col, filter.val)
         .select('*')
         .single();
       if (error) throw error;
