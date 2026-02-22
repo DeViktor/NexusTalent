@@ -41,7 +41,14 @@ export async function POST(req: Request) {
       if (!sample.error && Array.isArray(sample.data) && sample.data[0]) sampleRow = sample.data[0];
     } catch {}
 
-    const sampleKeys: string[] = sampleRow ? Object.keys(sampleRow) : [];
+    // Se a tabela estiver vazia, criamos um conjunto de colunas padrão para tentativa
+    const defaultKeys = [
+      'first_name','last_name','name','full_name','fullname','display_name',
+      'email','user_email','mail',
+      'profile_picture_url','avatar_url','profile_image','photo_url','image_url',
+      'id','user_id','uid'
+    ];
+    const sampleKeys: string[] = sampleRow ? Object.keys(sampleRow) : defaultKeys;
     const sampleHas = (k: string) => sampleKeys.includes(k);
     const emailCols = ['email','user_email','mail'];
     const idCols = ['id','user_id','uid'];
@@ -116,6 +123,8 @@ export async function POST(req: Request) {
     const filter: { col: string; val: string } | null = (() => {
       if (availableIdCol) return { col: availableIdCol, val: payload.userId };
       if (availableEmailCol && payload.email) return { col: availableEmailCol, val: payload.email };
+      // fallback padrão caso não detectado por amostra
+      if (!availableIdCol) return { col: 'id', val: payload.userId };
       return null;
     })();
 

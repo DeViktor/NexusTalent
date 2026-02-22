@@ -402,12 +402,27 @@ export async function generateAssessmentTestAction(input: GenerateAssessmentTest
   }
   
   export async function getChatbotResponseAction(input: ChatbotAssistanceInput): Promise<ChatbotAssistanceOutput> {
+    const hasGeminiKey = Boolean(process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY);
+    const buildFallback = (q: string): ChatbotAssistanceOutput => {
+        const query = (q || '').toLowerCase();
+        const links: { title: string; url: string }[] = [];
+        if (/(curso|form[aá]c|trein|course)/.test(query)) links.push({ title: 'Ver cursos', url: '/courses' });
+        if (/(vaga|empreg|trabalh|job|recruit)/.test(query)) links.push({ title: 'Ver vagas', url: '/recruitment' });
+        links.push({ title: 'Sobre a NexusTalent', url: '/about' });
+        return {
+            response: 'No momento estou a funcionar em modo básico. Pode explorar os cursos e vagas pelos atalhos abaixo ou dizer o que procura (ex.: "curso de Power BI", "vaga em Luanda").',
+            suggestedLinks: links
+        } as ChatbotAssistanceOutput;
+    };
+
+    if (!hasGeminiKey) return buildFallback(input.query);
+
     try {
         const output = await chatbotAssistance(input);
-        return output;
+        return output ?? buildFallback(input.query);
     } catch (error) {
         console.error("Error in getChatbotResponseAction:", error);
-        throw new Error("O assistente de IA não conseguiu responder. Tente novamente.");
+        return buildFallback(input.query);
     }
 }
 

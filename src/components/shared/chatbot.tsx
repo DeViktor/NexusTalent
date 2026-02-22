@@ -71,9 +71,7 @@ export function Chatbot() {
     }
   };
   
-  if (isDashboard) {
-      return null;
-  }
+  // O assistente fica visível em todas as páginas, incluindo o dashboard
 
   return (
     <>
