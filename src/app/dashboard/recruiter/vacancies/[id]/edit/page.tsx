@@ -134,17 +134,17 @@ export default function EditVacancyPage() {
     };
 
     try {
-        await updateVacancy(String(vacancyId), updates);
-        toast({
-          title: "Vaga Atualizada!",
-          description: "As alterações na vaga foram guardadas com sucesso.",
-        });
+        const updated = await updateVacancy(String(vacancyId), updates);
+        if (!updated) {
+          throw new Error('Falha ao atualizar a vaga no Supabase');
+        }
+        toast({ title: 'Vaga Atualizada!', description: 'As alterações na vaga foram guardadas com sucesso.' });
         router.push('/dashboard/recruiter/vacancies');
     } catch (error) {
         toast({
             variant: "destructive",
             title: "Erro ao Atualizar",
-            description: "Não foi possível guardar as alterações. Tente novamente.",
+            description: error instanceof Error ? error.message : "Não foi possível guardar as alterações. Tente novamente.",
         });
     } finally {
         setIsSubmitting(false);

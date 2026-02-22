@@ -6,7 +6,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { Bot, Send, X, Loader2, Link as LinkIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { getChatbotResponseAction } from '@/app/actions';
 import { usePathname } from 'next/navigation';
 import { Avatar, AvatarFallback } from '../ui/avatar';
 import Link from 'next/link';
@@ -48,6 +47,7 @@ export function Chatbot() {
     setIsLoading(true);
 
     try {
+      const { getChatbotResponseAction } = await import('@/app/actions');
       const result = await getChatbotResponseAction({
         query: inputValue,
         context: `The user is currently on the ${pathname} page.`,
@@ -55,8 +55,8 @@ export function Chatbot() {
       
       const botMessage: Message = {
         sender: 'bot',
-        text: result.response,
-        links: result.suggestedLinks,
+        text: result?.response || 'Obrigado! Já estou aqui para ajudar. Consulte as páginas de Cursos e Empregos para começar.',
+        links: Array.isArray(result?.suggestedLinks) ? result.suggestedLinks : [],
       };
       setMessages(prev => [...prev, botMessage]);
 
