@@ -4,6 +4,8 @@ import { verifySession } from '@/lib/auth/session';
 
 export async function POST(req: Request) {
   try {
+    const url = new URL((req as any).url || 'http://local');
+    const debug = url.searchParams.get('debug') === '1';
     const cookieHeader = (req as any).headers?.get?.('cookie') as string | undefined;
     const appSession = cookieHeader
       ?.split(';')
@@ -89,6 +91,18 @@ export async function POST(req: Request) {
       else if (has('profile_image')) updates.profile_image = profilePictureUrl;
       else if (has('photo_url')) updates.photo_url = profilePictureUrl;
       else if (has('image_url')) updates.image_url = profilePictureUrl;
+    }
+
+    if (debug) {
+      return NextResponse.json({
+        ok: true,
+        info: {
+          sampleKeys,
+          candidateIdCols: idCols,
+          candidateEmailCols: emailCols,
+          suggestedUpdates: updates,
+        }
+      });
     }
 
     if (Object.keys(updates).length === 0) {
