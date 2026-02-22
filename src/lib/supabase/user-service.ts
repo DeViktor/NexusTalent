@@ -7,7 +7,9 @@ export type UserInsert = Database['public']['Tables']['users']['Insert'];
 export type UserUpdate = Database['public']['Tables']['users']['Update'];
 
 export function mapUserRowToUserProfile(row: UserRow): UserProfile {
-  const fullName = row.name || '';
+  const anyRow = row as any;
+  const computedName = anyRow.name || anyRow.full_name || anyRow.fullname || anyRow.display_name || [anyRow.first_name, anyRow.last_name].filter(Boolean).join(' ');
+  const fullName = computedName || '';
   const [firstName, ...rest] = fullName.split(' ');
   const lastName = rest.join(' ');
   const role = (row.role || 'student') as UserProfile['userType'];
@@ -16,9 +18,9 @@ export function mapUserRowToUserProfile(row: UserRow): UserProfile {
     id: row.id,
     firstName: firstName || fullName || 'Usuário',
     lastName: lastName || '',
-    email: row.email,
+    email: (anyRow.email || anyRow.user_email || anyRow.mail) as string,
     userType: role,
-    profilePictureUrl: (row as any).avatar_url || (row as any).profile_picture_url || (row as any).profile_image || (row as any).photo_url || (row as any).image_url,
+    profilePictureUrl: anyRow.profile_picture_url || anyRow.avatar_url || anyRow.profile_image || anyRow.photo_url || anyRow.image_url,
     summary: row.bio,
     company: row.company,
   };

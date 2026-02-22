@@ -30,16 +30,55 @@ export async function POST(req: Request) {
     const fullName = `${firstName || ''} ${lastName || ''}`.trim();
 
     const updates: Record<string, any> = {};
-    if (fullName) updates.name = fullName;
-    if (email) updates.email = email;
-    // Preferir a coluna real do seu schema
-    if (typeof profilePictureUrl === 'string') updates.profile_picture_url = profilePictureUrl;
-
-    if (Object.keys(updates).length === 0) {
-      return NextResponse.json({ ok: false, error: 'Nenhum campo para atualizar' }, { status: 400 });
-    }
 
     const admin = getServerSupabase();
+    // Descobrir colunas existentes da tabela users para construir o payload correto
+    let existingRow: any = null;
+    try {
+      const probe = await (admin as any)
+        .from('users')
+        .select('*')
+        .eq('id', payload.userId)
+        .single();
+      if (!probe.error) existingRow = probe.data;
+    } catch {}
+
+    const keys: string[] = existingRow ? Object.keys(existingRow) : [];
+    const has = (k: string) => keys.includes(k);
+
+    if (fullName) {
+      if (has('name')) updates.name = fullName;
+      else if (has('full_name')) updates.full_name = fullName;
+      else if (has('fullname')) updates.fullname = fullName;
+      else if (has('display_name')) updates.display_name = fullName;
+      else {
+        // Fall back to first_name/last_name if exist
+        const [fn, ...lnParts] = fullName.split(' ');
+        const ln = lnParts.join(' ');
+        if (has('first_name')) updates.first_name = fn;
+        if (has('last_name')) updates.last_name = ln;
+        // se nenhuma coluna de nome existir, ignoramos o nome para evitar erro
+      }
+    }
+
+    if (email) {
+      if (has('email')) updates.email = email;
+      else if (has('user_email')) updates.user_email = email;
+      else if (has('mail')) updates.mail = email;
+    }
+
+    if (typeof profilePictureUrl === 'string') {
+      if (has('profile_picture_url')) updates.profile_picture_url = profilePictureUrl;
+      else if (has('avatar_url')) updates.avatar_url = profilePictureUrl;
+      else if (has('profile_image')) updates.profile_image = profilePictureUrl;
+      else if (has('photo_url')) updates.photo_url = profilePictureUrl;
+      else if (has('image_url')) updates.image_url = profilePictureUrl;
+    }
+
+    if (Object.keys(updates).length === 0) {
+      return NextResponse.json({ ok: false, error: 'Nenhum campo compatível com o schema atual' }, { status: 400 });
+    }
+
     let updatedRow: any = null;
     let lastErr: any = null;
 
