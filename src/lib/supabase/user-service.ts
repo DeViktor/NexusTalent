@@ -18,7 +18,7 @@ export function mapUserRowToUserProfile(row: UserRow): UserProfile {
     lastName: lastName || '',
     email: row.email,
     userType: role,
-    profilePictureUrl: row.avatar_url,
+    profilePictureUrl: (row as any).avatar_url || (row as any).profile_picture_url || (row as any).profile_image || (row as any).photo_url || (row as any).image_url,
     summary: row.bio,
     company: row.company,
   };

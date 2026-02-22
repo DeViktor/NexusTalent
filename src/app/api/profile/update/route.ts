@@ -32,21 +32,64 @@ export async function POST(req: Request) {
     const updates: Record<string, any> = {};
     if (fullName) updates.name = fullName;
     if (email) updates.email = email;
-    if (typeof profilePictureUrl === 'string') updates.avatar_url = profilePictureUrl;
+    // Preferir a coluna real do seu schema
+    if (typeof profilePictureUrl === 'string') updates.profile_picture_url = profilePictureUrl;
 
     if (Object.keys(updates).length === 0) {
       return NextResponse.json({ ok: false, error: 'Nenhum campo para atualizar' }, { status: 400 });
     }
 
     const admin = getServerSupabase();
-    const { data, error } = await (admin as any)
-      .from('users')
-      .update(updates)
-      .eq('id', payload.userId)
-      .select('*')
-      .single();
-    if (error) {
-      return NextResponse.json({ ok: false, error: error.message || 'Erro ao atualizar' }, { status: 500 });
+    let updatedRow: any = null;
+    let lastErr: any = null;
+
+    async function tryUpdate(u: Record<string, any>) {
+      const { data, error } = await (admin as any)
+        .from('users')
+        .update(u)
+        .eq('id', payload.userId)
+        .select('*')
+        .single();
+      if (error) throw error;
+      return data;
+    }
+
+    try {
+      updatedRow = await tryUpdate(updates);
+    } catch (e: any) {
+      lastErr = e;
+      if (profilePictureUrl && /column .* (schema cache|does not exist)/i.test(String(e?.message || ''))) {
+        const avatarColumns = ['profile_picture_url','avatar_url','profile_image','photo_url','image_url'];
+        let success = false;
+        for (const col of avatarColumns) {
+          try {
+            const alt = { ...updates } as any;
+            delete alt.avatar_url;
+            delete alt.profile_picture_url;
+            alt[col] = profilePictureUrl;
+            updatedRow = await tryUpdate(alt);
+            success = true;
+            break;
+          } catch (err) {
+            lastErr = err;
+          }
+        }
+        if (!success) {
+          // Tenta atualizar apenas name/email caso avatar falhe em todas
+          try {
+            const minimal: any = { ...updates };
+            delete minimal.avatar_url;
+            delete minimal.profile_picture_url;
+            updatedRow = await tryUpdate(minimal);
+          } catch (err) {
+            lastErr = err;
+          }
+        }
+      }
+    }
+
+    if (!updatedRow) {
+      return NextResponse.json({ ok: false, error: lastErr?.message || 'Erro ao atualizar' }, { status: 500 });
     }
 
     async function resolveTable(candidates: string[]) {
@@ -77,7 +120,7 @@ export async function POST(req: Request) {
       }
     }
 
-    return NextResponse.json({ ok: true, data });
+    return NextResponse.json({ ok: true, data: updatedRow });
   } catch (e: any) {
     return NextResponse.json({ ok: false, error: e?.message || 'Erro' }, { status: 500 });
   }
