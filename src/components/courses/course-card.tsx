@@ -1,3 +1,4 @@
+import * as React from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import type { Course } from '@/lib/types';
@@ -15,8 +16,14 @@ interface CourseCardProps {
 }
 
 export function CourseCard({ course }: CourseCardProps) {
-  const courseCategories = getCourseCategories();
-  const category = courseCategories.find(c => c.id === course.category);
+  const [categoryName, setCategoryName] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    getCourseCategories().then(cats => {
+      const found = cats.find(c => c.id === course.category);
+      if (found) setCategoryName(found.name);
+    });
+  }, [course.category]);
   const images = getImages();
   const image = images.find(p => p.id === course.imageId);
   const imageSrc = course.imageDataUri || image?.imageUrl;
@@ -55,8 +62,8 @@ export function CourseCard({ course }: CourseCardProps) {
           )}
         </div>
         <CardContent className="p-4 flex flex-col flex-grow">
-          {category && (
-            <Badge variant="secondary" className="mb-2 self-start">{category.name}</Badge>
+          {categoryName && (
+            <Badge variant="secondary" className="mb-2 self-start">{categoryName}</Badge>
           )}
           <h3 className="font-headline font-semibold text-lg flex-grow">{course.name}</h3>
           <div className="flex justify-between items-center mt-4">

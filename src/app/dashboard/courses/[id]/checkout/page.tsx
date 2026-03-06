@@ -32,16 +32,23 @@ export default function CheckoutPage() {
 
 
   useEffect(() => {
-    if (id) {
-      const foundCourse = getCourseById(id);
-      setCourse(foundCourse || null);
-       if (foundCourse) {
-        const paymentData = `Pagamento para NexusTalent;Curso: ${foundCourse.name};Valor: 25.000 AOA`;
-        const qrApiUrl = `https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(paymentData)}`;
-        setQrCodeUrl(qrApiUrl);
+    const loadCourse = async () => {
+      if (id) {
+        try {
+          const foundCourse = await getCourseById(id);
+          setCourse(foundCourse || null);
+           if (foundCourse) {
+            const paymentData = `Pagamento para NexusTalent;Curso: ${foundCourse.name};Valor: 25.000 AOA`;
+            const qrApiUrl = `https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(paymentData)}`;
+            setQrCodeUrl(qrApiUrl);
+          }
+        } catch (error) {
+          console.error("Failed to load course", error);
+        }
       }
-    }
-    setIsLoading(false);
+      setIsLoading(false);
+    };
+    loadCourse();
   }, [id]);
 
   if (isLoading) {

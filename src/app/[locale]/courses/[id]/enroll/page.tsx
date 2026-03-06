@@ -154,7 +154,7 @@ export default function EnrollPage() {
 
   useEffect(() => {
     if (!isUserLoading && !authUser && id) {
-      router.push(`/login?redirect=/courses/${id}/enroll`);
+      router.push(`/login?redirectTo=/courses/${id}/enroll`);
     }
   }, [authUser, isUserLoading, id, router]);
 

@@ -293,20 +293,50 @@ export default function CourseDetailPage() {
   const params = useParams();
   const id = Array.isArray(params.id) ? params.id[0] : params.id;
   const [course, setCourse] = useState<Course | null | undefined>(undefined);
+  const [hasAccess, setHasAccess] = useState<boolean | undefined>(undefined);
 
   useEffect(() => {
     if (id) {
-        const foundCourse = getCourseById(id);
-        setCourse(foundCourse);
+        (async () => {
+          const [foundCourse, accessResponse] = await Promise.all([
+            getCourseById(id),
+            fetch(`/api/courses/${id}/access`, { credentials: 'include' }).catch(() => null),
+          ]);
+          setCourse(foundCourse);
+          if (!accessResponse || !accessResponse.ok) {
+            setHasAccess(false);
+            return;
+          }
+          const accessData = await accessResponse.json();
+          setHasAccess(Boolean(accessData?.hasAccess));
+        })();
     }
   }, [id]);
 
-  if (course === undefined) {
+  if (course === undefined || hasAccess === undefined) {
     return <div>A carregar...</div>
   }
   
   if (!course) {
     return notFound();
+  }
+
+  if (!hasAccess) {
+    return (
+      <div className="container mx-auto px-4 py-10">
+        <Card>
+          <CardHeader>
+            <CardTitle>Acesso restrito</CardTitle>
+            <CardDescription>Você precisa comprar este curso para acessar as aulas.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Button asChild>
+              <Link href={`/dashboard/courses/${course.id}/checkout`}>Finalizar pagamento</Link>
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
   }
   
   return <CoursePlayerPage course={course} />;

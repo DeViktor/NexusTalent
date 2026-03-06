@@ -84,7 +84,14 @@ export function InstructorDashboard() {
         let active = true;
         (async () => {
             try {
-                const { data, error } = await supabase.from('courses').select('*');
+                const sessionResponse = await fetch('/api/auth/session');
+                const sessionJson = await sessionResponse.json();
+                const userId = sessionJson?.ok ? sessionJson?.user?.id : null;
+                if (!userId) {
+                    if (active) setManagedCourses([]);
+                    return;
+                }
+                const { data, error } = await supabase.from('courses').select('*').eq('owner_id', userId);
                 if (error) throw error;
                 const rows = Array.isArray(data) ? data : [];
                 const mapped: Course[] = rows.map((row: any) => ({

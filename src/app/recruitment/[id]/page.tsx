@@ -18,15 +18,24 @@ import { format } from "date-fns";
 import { pt } from "date-fns/locale";
 import { SimilarVacancies } from "@/components/recruitment/similar-vacancies";
 import { JobAlertSubscription } from "@/components/recruitment/job-alert-subscription";
+import type { CourseCategory } from "@/lib/types";
+import { createApplication } from "@/lib/supabase/application-service";
+import { supabase } from "@/lib/supabase/client";
 
 // The vacancy prop here receives serializable data (dates as strings)
 export function VacancyClientPage({ vacancy: job }: { vacancy: JobPosting }) {
   const [isUserLoading, setIsUserLoading] = useState(true);
-  const [user, setUser] = useState<{ email: string } | null>(null);
+  const [user, setUser] = useState<{ id: string; email: string } | null>(null);
   const { toast } = useToast();
   const router = useRouter();
   const [isApplying, setIsApplying] = useState(false);
-  const category = getCourseCategories().find(c => c.name === job.category) || null;
+  const [categories, setCategories] = useState<CourseCategory[]>([]);
+  const [resumeFile, setResumeFile] = useState<File | null>(null);
+  const category = categories.find(c => c.name === job.category) || null;
+
+  React.useEffect(() => {
+    getCourseCategories().then(setCategories).catch(() => setCategories([]));
+  }, []);
 
   React.useEffect(() => {
     const fetchSession = async () => {
@@ -35,7 +44,7 @@ export function VacancyClientPage({ vacancy: job }: { vacancy: JobPosting }) {
         if (res.ok) {
           const json = await res.json();
           if (json?.ok && json?.user) {
-            setUser({ email: json.user.email });
+            setUser({ id: json.user.id, email: json.user.email });
           } else {
             setUser(null);
           }
@@ -61,13 +70,46 @@ export function VacancyClientPage({ vacancy: job }: { vacancy: JobPosting }) {
     }
     
     setIsApplying(true);
-    setTimeout(() => {
-        toast({
-            title: "Candidatura Simulada!",
-            description: `A sua candidatura para ${job.title} foi enviada com sucesso (simulação).`,
+    try {
+      let resumeUrl: string | undefined;
+      if (resumeFile) {
+        const sanitizedName = resumeFile.name.replace(/[^a-zA-Z0-9.\-_]/g, '_');
+        const filePath = `${user.id}/${job.id}/${Date.now()}-${sanitizedName}`;
+        const { error: uploadError } = await supabase.storage.from('resumes').upload(filePath, resumeFile, {
+          cacheControl: '3600',
+          upsert: false,
         });
-        setIsApplying(false);
-    }, 1500);
+        if (uploadError) {
+          throw uploadError;
+        }
+        resumeUrl = filePath;
+      }
+
+      const created = await createApplication({
+        job_posting_id: job.id,
+        applicant_id: user.id,
+        status: 'Recebida',
+        resume_url: resumeUrl,
+      });
+
+      if (!created) {
+        throw new Error('Não foi possível salvar a candidatura.');
+      }
+
+      toast({
+        title: "Candidatura enviada!",
+        description: `A sua candidatura para ${job.title} foi enviada com sucesso.`,
+      });
+      setResumeFile(null);
+    } catch (error) {
+      toast({
+        variant: "destructive",
+        title: "Erro ao candidatar",
+        description: "Não foi possível concluir a candidatura. Verifique o upload do CV e tente novamente.",
+      });
+    } finally {
+      setIsApplying(false);
+    }
   };
 
   // Helper to safely create Date objects from strings
@@ -188,6 +230,17 @@ export function VacancyClientPage({ vacancy: job }: { vacancy: JobPosting }) {
                                 </div>
                             </div>
                           )}
+
+                          <div className="mt-6 pt-6 border-t space-y-2">
+                            <Label htmlFor="resume">Currículo (PDF)</Label>
+                            <input
+                              id="resume"
+                              type="file"
+                              accept=".pdf"
+                              onChange={(e) => setResumeFile(e.target.files?.[0] || null)}
+                              className="block w-full text-sm text-muted-foreground file:mr-4 file:rounded-md file:border-0 file:bg-secondary file:px-3 file:py-2 file:text-sm file:font-medium"
+                            />
+                          </div>
 
                           <Button 
                             size="lg" 

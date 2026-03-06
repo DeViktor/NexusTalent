@@ -6,7 +6,7 @@ import { getCourseById } from '@/lib/course-service';
 import type { Course } from '@/lib/types';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { ArrowLeft, Loader2, Tag, Lock, QrCode } from 'lucide-react';
+import { ArrowLeft, Loader2, Tag, Lock, QrCode, CreditCard } from 'lucide-react';
 import { Header } from '@/components/layout/header';
 import { Footer } from '@/components/layout/footer';
 import { getImages } from '@/lib/site-data';
@@ -16,11 +16,13 @@ import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
 import { Separator } from '@/components/ui/separator';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { useUser } from '@/lib/auth/use-user';
 
 export default function CheckoutPage() {
   const params = useParams();
   const router = useRouter();
   const { toast } = useToast();
+  const { user } = useUser();
   const id = Array.isArray(params.id) ? params.id[0] : params.id;
   
   const [course, setCourse] = useState<Course | null>(null);
@@ -32,16 +34,23 @@ export default function CheckoutPage() {
 
 
   useEffect(() => {
-    if (id) {
-      const foundCourse = getCourseById(id);
-      setCourse(foundCourse || null);
-       if (foundCourse) {
-        const paymentData = `Pagamento para NexusTalent;Curso: ${foundCourse.name};Valor: 25.000 AOA`;
-        const qrApiUrl = `https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(paymentData)}`;
-        setQrCodeUrl(qrApiUrl);
+    const loadCourse = async () => {
+      if (id) {
+        try {
+          const foundCourse = await getCourseById(id);
+          setCourse(foundCourse || null);
+           if (foundCourse) {
+            const paymentData = `Pagamento para NexusTalent;Curso: ${foundCourse.name};Valor: 25.000 AOA`;
+            const qrApiUrl = `https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(paymentData)}`;
+            setQrCodeUrl(qrApiUrl);
+          }
+        } catch (error) {
+          console.error("Failed to load course", error);
+        }
       }
-    }
-    setIsLoading(false);
+      setIsLoading(false);
+    };
+    loadCourse();
   }, [id]);
 
   if (isLoading) {
@@ -70,6 +79,75 @@ export default function CheckoutPage() {
         router.push('/dashboard/student');
     }, 2500);
   }
+
+  const handleStripePayment = async () => {
+    if (!course) return;
+    
+    if (!user) {
+        toast({
+            title: "Login Necessário",
+            description: "Por favor, faça login para continuar com o pagamento.",
+            variant: "destructive"
+        });
+        router.push('/login?redirectTo=/courses/' + course.id + '/checkout');
+        return;
+    }
+
+    const currency = (course.currency || 'aoa').toLowerCase();
+    const price = course.price || 25000;
+    const isZeroDecimal = currency === 'aoa';
+    const amount = isZeroDecimal ? price : price * 100;
+
+    setIsProcessing(true);
+    try {
+      const response = await fetch('/api/stripe/checkout-session', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          items: [
+            {
+              name: course.name,
+              amount: amount, // Amount in smallest currency unit (e.g., cents)
+              currency: currency,
+              quantity: 1,
+            },
+          ],
+          mode: 'payment',
+          success_url: window.location.origin + `/${params.locale}/dashboard/student`,
+          cancel_url: window.location.href,
+          customer_email: user.email,
+          metadata: {
+            courseId: course.id,
+            userId: user.id,
+            type: 'course_purchase'
+          }
+        }),
+      });
+
+      const data = await response.json();
+      if (data.url) {
+        window.location.href = data.url;
+      } else {
+        console.error('Stripe error:', data.error);
+        toast({
+            title: "Erro no pagamento",
+            description: "Não foi possível iniciar o pagamento com Stripe.",
+            variant: "destructive"
+        });
+        setIsProcessing(false);
+      }
+    } catch (error) {
+      console.error('Payment error:', error);
+      setIsProcessing(false);
+       toast({
+            title: "Erro no pagamento",
+            description: "Ocorreu um erro ao processar o pagamento.",
+            variant: "destructive"
+        });
+    }
+  };
 
   return (
     <>
@@ -118,10 +196,11 @@ export default function CheckoutPage() {
               <div className="space-y-6 bg-secondary/50 p-6 rounded-lg">
                  <h3 className="font-semibold text-lg">Procedimentos de Pagamento</h3>
                   <Tabs defaultValue="reference" className="w-full">
-                    <TabsList className="grid w-full grid-cols-3">
+                    <TabsList className="grid w-full grid-cols-4">
                       <TabsTrigger value="reference">Referência</TabsTrigger>
                       <TabsTrigger value="express">Expresso</TabsTrigger>
                        <TabsTrigger value="qrcode">QR Code</TabsTrigger>
+                       <TabsTrigger value="stripe">Cartão</TabsTrigger>
                     </TabsList>
                     <TabsContent value="reference" className="mt-4 text-sm space-y-3">
                       <p className="text-xs text-muted-foreground">Efetue o pagamento numa caixa Multicaixa ou no seu Internet Banking usando os dados abaixo.</p>
@@ -156,11 +235,23 @@ export default function CheckoutPage() {
                                     <Loader2 className="h-8 w-8 animate-spin"/>
                                 </div>
                             )}
-                            <p className='mt-4 font-mono font-bold'>AOA 25.000,00</p>
+                            <p className='mt-4 font-mono font-bold'>AOA {course.price ? course.price.toLocaleString() : '25.000'},00</p>
                         </div>
                           <Button className="w-full mt-4" size="lg" onClick={() => handlePayment('QR Code')} disabled={isProcessing}>
                             {isProcessing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Lock className="mr-2 h-4 w-4" />}
                             Confirmar Inscrição
+                        </Button>
+                    </TabsContent>
+                    <TabsContent value="stripe" className="mt-4 text-sm space-y-3">
+                        <p className="text-xs text-muted-foreground">Pague com segurança usando o seu cartão de crédito ou débito via Stripe.</p>
+                        <div className="p-4 border rounded-md bg-background flex flex-col items-center justify-center">
+                             <CreditCard className="h-12 w-12 mb-2 text-primary" />
+                             <p className="text-center text-muted-foreground">Aceitamos Visa, Mastercard, American Express e mais.</p>
+                             <p className='mt-4 font-mono font-bold'>AOA {course.price ? course.price.toLocaleString() : '25.000'},00</p>
+                        </div>
+                         <Button className="w-full mt-4" size="lg" onClick={handleStripePayment} disabled={isProcessing}>
+                            {isProcessing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Lock className="mr-2 h-4 w-4" />}
+                            Pagar com Cartão
                         </Button>
                     </TabsContent>
                   </Tabs>

@@ -36,7 +36,11 @@ const toBase64 = async (url: string) => {
 export function CertificateGenerator({ courseId, grade }: CertificateGeneratorProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [studentName, setStudentName] = useState<string>("Formando");
-  const course = getCourseById(courseId);
+  const [course, setCourse] = useState<Course | null>(null);
+
+  useEffect(() => {
+    getCourseById(courseId).then(c => setCourse(c || null));
+  }, [courseId]);
 
   useEffect(() => {
     let active = true;

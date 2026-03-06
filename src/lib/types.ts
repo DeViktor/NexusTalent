@@ -35,6 +35,8 @@ export interface Course {
     imageDataUri?: string; // New field for the generated image
     duration: string;
     format: 'Online' | 'Presencial' | 'Híbrido';
+    price?: number;
+    currency?: string;
     generalObjective: string;
     whatYouWillLearn: string[];
     modules: CourseModule[];

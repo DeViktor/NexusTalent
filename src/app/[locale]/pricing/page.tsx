@@ -7,10 +7,12 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
-import { Check, Star, Globe } from 'lucide-react';
+import { Check, Star, Globe, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { useToast } from '@/hooks/use-toast';
+import { useUser } from '@/lib/auth/use-user';
 
 type Currency = 'brl' | 'eur' | 'aoa';
 
@@ -195,9 +197,90 @@ const trainingPlans = {
 };
 
 const PricingCard = ({ plan, currency, billingType }: { plan: any; currency: Currency; billingType: 'monthly' | 'annually' }) => {
+    const { toast } = useToast();
+    const { user } = useUser();
+    const [isLoading, setIsLoading] = useState(false);
     const price = typeof plan.price === 'string' ? plan.price : plan.price[currency];
     const priceSuffix = typeof plan.price !== 'string' ? (billingType === 'monthly' ? '/mês' : '/mês (cobrado anualmente)') : null;
-    
+
+    const handleSubscribe = async () => {
+        if (price === 'Personalizado') {
+             window.location.href = 'mailto:contato@nexustalent.com';
+             return;
+        }
+
+        if (!user) {
+            toast({
+                title: "Login Necessário",
+                description: "Por favor, faça login para assinar um plano.",
+                variant: "destructive"
+            });
+            window.location.href = '/login?redirectTo=/pricing';
+            return;
+        }
+
+        setIsLoading(true);
+        try {
+            // Simple parsing: remove non-digits to get the integer amount
+            const numericValue = parseInt(price.replace(/\D/g, ''), 10);
+            
+            // For zero-decimal currencies like AOA, amount should be the integer value.
+            // For 2-decimal currencies like BRL/EUR, amount should be multiplied by 100 (cents).
+            const isZeroDecimal = currency === 'aoa'; 
+            const amountInCents = isZeroDecimal ? numericValue : numericValue * 100;
+
+            const response = await fetch('/api/stripe/checkout-session', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    items: [
+                        {
+                            name: `${plan.name} (${billingType === 'monthly' ? 'Mensal' : 'Anual'})`,
+                            description: plan.description,
+                            amount: amountInCents,
+                            currency: currency,
+                            quantity: 1,
+                            interval: billingType === 'monthly' ? 'month' : 'year',
+                        },
+                    ],
+                    mode: 'subscription',
+                    success_url: window.location.origin + '/dashboard',
+                    cancel_url: window.location.href,
+                    customer_email: user.email,
+                    metadata: {
+                        planName: plan.name,
+                        billingType: billingType,
+                        userId: user.id,
+                        type: 'subscription'
+                    }
+                }),
+            });
+
+            const data = await response.json();
+            if (data.url) {
+                window.location.href = data.url;
+            } else {
+                console.error('Stripe error:', data.error);
+                toast({
+                    title: "Erro",
+                    description: "Não foi possível iniciar a assinatura.",
+                    variant: "destructive"
+                });
+                setIsLoading(false);
+            }
+        } catch (error) {
+            console.error('Subscription error:', error);
+            setIsLoading(false);
+             toast({
+                title: "Erro",
+                description: "Ocorreu um erro ao processar.",
+                variant: "destructive"
+            });
+        }
+    };
+
     return (
         <Card className={cn("flex flex-col", plan.popular ? "border-primary border-2" : "")}>
             {plan.popular && (
@@ -222,7 +305,8 @@ const PricingCard = ({ plan, currency, billingType }: { plan: any; currency: Cur
                 </li>
               ))}
             </ul>
-            <Button className="w-full" variant={plan.popular ? 'default' : 'outline'}>
+            <Button className="w-full" variant={plan.popular ? 'default' : 'outline'} onClick={handleSubscribe} disabled={isLoading}>
+              {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               {plan.name === 'Corporativo' ? 'Entre em Contato' : 'Subscrever Agora'}
             </Button>
           </CardContent>

@@ -60,7 +60,7 @@ export default function CoursesPage() {
     };
 
     fetchCourses();
-    setCourseCategories(getCourseCategories());
+    getCourseCategories().then(setCourseCategories);
   }, []);
 
   const filteredCourses = useMemo(() => {

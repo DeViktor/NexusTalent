@@ -16,7 +16,7 @@ import { Loader2, ArrowLeft, Save, Trash2, PlusCircle, Link as LinkIcon, Bot, Fi
 import { useToast } from '@/hooks/use-toast';
 import { generateModuleAssessmentAction } from '@/app/actions';
 import Image from 'next/image';
-import type { Course } from '@/lib/types';
+import type { Course, CourseCategory } from '@/lib/types';
 import { useRouter, useParams, notFound } from 'next/navigation';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
@@ -76,7 +76,11 @@ export default function EditCoursePage() {
   const router = useRouter();
   const params = useParams();
   const courseId = Array.isArray(params.id) ? params.id[0] : params.id;
-  const courseCategories = getCourseCategories();
+  const [courseCategories, setCourseCategories] = useState<CourseCategory[]>([]);
+
+  useEffect(() => {
+    getCourseCategories().then(setCourseCategories);
+  }, []);
 
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
@@ -85,8 +89,10 @@ export default function EditCoursePage() {
 
   useEffect(() => {
     if (courseId) {
-      const foundCourse = getCourseById(courseId as string);
-      setCourse(foundCourse);
+      (async () => {
+        const foundCourse = await getCourseById(courseId as string);
+        setCourse(foundCourse);
+      })();
     }
   }, [courseId]);
 
@@ -143,7 +149,7 @@ export default function EditCoursePage() {
     };
 
     try {
-      const result = updateCourse(data.id, courseData);
+      const result = await updateCourse(data.id, courseData);
 
       if (result) {
         toast({

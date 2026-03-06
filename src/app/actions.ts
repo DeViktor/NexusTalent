@@ -33,6 +33,8 @@ import path from 'path';
 import { supabase, getServerSupabase } from "@/lib/supabase/client";
 import { getCourses, getCourseCategories } from "@/lib/course-service";
 import { z } from "zod";
+import { cookies } from "next/headers";
+import { verifySession } from "@/lib/auth/session";
 
 // AI Actions
 export async function analyzeResumeAction(input: AIResumeAnalysisInput): Promise<AIResumeAnalysisOutput> {
@@ -156,6 +158,12 @@ export async function generateCourseImageAction(imageHint: string): Promise<stri
 export async function addCourseAction(course: Omit<Course, 'status'>): Promise<{ success: boolean; message: string; course?: Course }> {
     try {
         const serverSupabase = getServerSupabase();
+        const cookieStore = await cookies();
+        const appSession = cookieStore.get('app_session')?.value;
+        const session = appSession ? await verifySession(appSession) : null;
+        if (!session?.userId) {
+            return { success: false, message: 'Sessão inválida. Faça login novamente.' };
+        }
         const slugBase = course.name
           .toLowerCase()
           .normalize('NFD')
@@ -165,7 +173,7 @@ export async function addCourseAction(course: Omit<Course, 'status'>): Promise<{
         const courseId = course.id && String(course.id).trim().length > 0
           ? String(course.id)
           : `${slugBase}-${Math.random().toString(36).slice(2, 8)}`;
-        const categories = getCourseCategories();
+        const categories = await getCourseCategories();
         const byId = categories.find(c => c.id === course.category);
         const byName = categories.find(c => c.name === course.category);
         const normalizedCategory = byId?.id ?? byName?.id ?? 'comportamental';
@@ -189,6 +197,7 @@ export async function addCourseAction(course: Omit<Course, 'status'>): Promise<{
             id: courseId,
             name: course.name,
             category: normalizedCategory,
+            owner_id: session.userId,
             image_id: course.imageId,
             image_data_uri: course.imageDataUri,
             duration: course.duration,

@@ -33,8 +33,8 @@ export async function POST(req: Request) {
 
       if (process.env.SUPABASE_SERVICE_ROLE_KEY) {
         const admin = getServerSupabase();
-        const { data: userRow } = await admin.from('users').select('user_type').eq('id', authUserId).limit(1);
-        role = (userRow?.[0] as any)?.user_type as any;
+        const { data: userRow } = await admin.from('users').select('role').eq('id', authUserId).limit(1);
+        role = (userRow?.[0] as any)?.role as any;
       }
     } else {
       if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
@@ -45,7 +45,7 @@ export async function POST(req: Request) {
       const admin = getServerSupabase();
       const { data: userRows, error: userError } = await admin
         .from('users')
-        .select('id,email,user_type,role,password_hash')
+        .select('id,email,role,password_hash')
         .eq('email', email.toLowerCase())
         .limit(1);
 
@@ -66,7 +66,7 @@ export async function POST(req: Request) {
 
       authUserId = String(userRow.id);
       authEmail = String(userRow.email ?? email.toLowerCase());
-      role = (userRow.user_type ?? userRow.role ?? undefined) as any;
+      role = (userRow.role ?? undefined) as any;
     }
 
     const exp = Date.now() + 7 * 24 * 60 * 60 * 1000;

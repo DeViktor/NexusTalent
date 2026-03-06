@@ -28,6 +28,8 @@ export const courses: Course[] = [
     status: 'Ativo',
     duration: '24 horas',
     format: 'Presencial',
+    price: 25000,
+    currency: 'AOA',
     generalObjective: 'Desenvolver as competências de comunicação e apresentação em público, permitindo realizar apresentações eficazes e de alto impacto.',
     whatYouWillLearn: [
       'Estruturar uma apresentação de forma lógica e cativante.',

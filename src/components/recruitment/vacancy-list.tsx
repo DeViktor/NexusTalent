@@ -86,7 +86,7 @@ export function VacancyList() {
     };
 
     fetchJobs();
-    setCourseCategories(getCourseCategories());
+    getCourseCategories().then(setCourseCategories);
     const storedView = localStorage.getItem('job-view-mode') as ViewMode;
     if (storedView) {
         setViewMode(storedView);

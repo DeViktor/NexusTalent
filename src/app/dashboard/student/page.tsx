@@ -99,6 +99,8 @@ const JobRecommendations = ({ userProfile }: { userProfile: UserProfile | null }
 };
 
 
+import { getPurchasedCourses } from "@/lib/course-service";
+
 export default function StudentDashboardPage() {
     const [user, setUser] = useState<any | null>(null);
     const [isUserLoading, setIsUserLoading] = useState(true);
@@ -159,7 +161,7 @@ export default function StudentDashboardPage() {
         fetchProfile();
     }, [user]);
     
-    // Mock data for enrolled courses
+    // Courses
     const [enrolledCourses, setEnrolledCourses] = useState<Array<{ id: string; name: string; progress: number; grade: number | null; format: string }>>([]);
     const [activeApplications, setActiveApplications] = useState<Array<{ id: string; jobId: string; title: string; status: string }>>([]);
 
@@ -175,23 +177,23 @@ export default function StudentDashboardPage() {
             }
 
             try {
-                // Cursos inscritos (se a tabela existir). Ignora silenciosamente caso não exista.
+                // Fetch REAL purchased courses
                 try {
-                    const { data: enrollments } = await (supabase as any)
-                        .from('enrollments')
-                        .select('course_id, progress, final_grade, courses(name, format)')
-                        .eq('student_id', user.id);
+                    const courses = await getPurchasedCourses(user.id);
                     if (active) {
-                        const mappedCourses = (enrollments || []).map((row: any) => ({
-                            id: String(row.course_id),
-                            name: row.courses?.name ?? 'Curso',
-                            progress: typeof row.progress === 'number' ? row.progress : 0,
-                            grade: typeof row.final_grade === 'number' ? row.final_grade : null,
-                            format: row.courses?.format ?? 'Online',
+                        // For now, assume 0% progress for newly purchased courses
+                        // In future, we can join with an 'enrollments' table if we track progress separately
+                        const mappedCourses = courses.map(c => ({
+                            id: c.id,
+                            name: c.name,
+                            progress: 0, // Default to 0 for now
+                            grade: null,
+                            format: c.format,
                         }));
                         setEnrolledCourses(mappedCourses);
                     }
-                } catch {
+                } catch (err) {
+                    console.error("Failed to load purchased courses", err);
                     if (active) setEnrolledCourses([]);
                 }
 
@@ -220,8 +222,7 @@ export default function StudentDashboardPage() {
                 if (active) setActiveApplications(mappedApps);
             } catch {
                 if (active) {
-                    setEnrolledCourses([]);
-                    setActiveApplications([]);
+                    // Keep existing state or clear if needed
                 }
             }
         })();

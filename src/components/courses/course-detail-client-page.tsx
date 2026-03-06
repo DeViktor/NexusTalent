@@ -13,12 +13,20 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/
 import { Header } from "@/components/layout/header";
 import { Footer } from "@/components/layout/footer";
 import React from "react";
-import type { Course } from "@/lib/types";
+import type { Course, CourseCategory } from "@/lib/types";
 import { supabase } from "@/lib/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 
 export function CourseDetailClientPage({ course }: { course: Course }) {
-  const category = getCourseCategories().find(c => c.id === course.category) || null;
+  const [category, setCategory] = React.useState<CourseCategory | null>(null);
+  
+  React.useEffect(() => {
+    getCourseCategories().then(cats => {
+        const found = cats.find(c => c.id === course.category) || null;
+        setCategory(found);
+    });
+  }, [course.category]);
+
   const [relatedCourses, setRelatedCourses] = React.useState<Course[]>([]);
   const image = getImages().find(p => p.id === course.imageId) || null;
   

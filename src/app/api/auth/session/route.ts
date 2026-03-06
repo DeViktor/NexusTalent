@@ -24,7 +24,7 @@ export async function GET(req: Request) {
     const admin = getServerSupabase();
     const { data: profileRows, error: profileError } = await admin
       .from('users')
-      .select('id,email,first_name,last_name,user_type,profile_picture_url')
+      .select('*')
       .eq('id', payload.userId)
       .limit(1);
     if (profileError) throw profileError;
@@ -34,7 +34,7 @@ export async function GET(req: Request) {
     const lastName = (profile as any)?.last_name || '';
     const fullName = `${firstName} ${lastName}`.trim() || null;
     const photoURL = (profile as any)?.profile_picture_url || null;
-    const role = ((payload.role ?? (profile as any)?.user_type) as string | undefined) || undefined;
+    const role = ((payload.role ?? (profile as any)?.role ?? (profile as any)?.user_type) as string | undefined) || undefined;
 
     const user = {
       id: payload.userId,
