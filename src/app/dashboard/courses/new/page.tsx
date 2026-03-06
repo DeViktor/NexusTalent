@@ -16,7 +16,7 @@ import { Loader2, Wand2, ArrowLeft, Link as LinkIcon, PlusCircle, Trash2, Save, 
 import { useToast } from '@/hooks/use-toast';
 import { addCourseAction, generateCourseContentAction, generateModuleAssessmentAction, generateCourseImageAction } from '@/app/actions';
 import Image from 'next/image';
-import type { Course } from '@/lib/types';
+import type { Course, CourseCategory } from '@/lib/types';
 import { useRouter } from 'next/navigation';
 import {
   Dialog,
@@ -105,7 +105,19 @@ export default function NewCoursePage() {
     })();
     return () => { active = false; };
   }, []);
-  const courseCategories = getCourseCategories();
+  const [courseCategories, setCourseCategories] = useState<CourseCategory[]>([]);
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        const cats = await getCourseCategories();
+        if (active) setCourseCategories(Array.isArray(cats) ? cats : []);
+      } catch {
+        if (active) setCourseCategories([]);
+      }
+    })();
+    return () => { active = false };
+  }, []);
 
 
   const form = useForm<FormValues>({
