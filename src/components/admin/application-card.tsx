@@ -120,10 +120,11 @@ export function ApplicationCard({ application, onStatusChange }: ApplicationCard
         fetchJob();
     }, [application.jobPostingId]);
 
-    // Mock application date if it's a Timestamp object for display
-    const applicationDate = application.applicationDate instanceof Date 
-        ? application.applicationDate 
-        : new Date(); // Fallback for mock data
+    const applicationDate = application.applicationDate instanceof Date
+        ? application.applicationDate
+        : application.applicationDate
+        ? new Date(application.applicationDate as any)
+        : null;
 
     const handleStatusChange = (newStatus: ApplicationStatus) => {
         onStatusChange(application.id, newStatus);

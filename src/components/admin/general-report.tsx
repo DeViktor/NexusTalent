@@ -123,7 +123,7 @@ export function GeneralReport({ data, reportType = 'all' }: GeneralReportProps) 
     
     return (
         <div className="flex flex-col h-full">
-             <ScrollArea className="flex-grow">
+             <ScrollArea className="flex-grow min-h-0">
                 <div id="report-content" ref={reportRef} className="p-6 bg-white text-black">
                     <div className="space-y-10">
                         <div className="text-center mb-8">

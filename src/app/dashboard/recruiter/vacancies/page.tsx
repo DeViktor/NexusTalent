@@ -9,7 +9,6 @@ import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
-import { supabase } from '@/lib/supabase/client';
 import { useUser } from '@/lib/auth/use-user';
 import { useRouter } from 'next/navigation';
 import {
@@ -27,7 +26,6 @@ const VACANCIES_PER_PAGE = 10;
 
 export default function RecruiterVacanciesPage() {
   const { user } = useUser();
-  const [authUserId, setAuthUserId] = useState<string | null>(null);
   const { toast } = useToast();
   const router = useRouter();
 
@@ -36,6 +34,7 @@ export default function RecruiterVacanciesPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
+  const [deletingVacancyId, setDeletingVacancyId] = useState<string | null>(null);
 
   useEffect(() => {
     async function fetchData() {
@@ -43,7 +42,7 @@ export default function RecruiterVacanciesPage() {
         setIsLoading(true);
         let jobsToUse: Vacancy[] = [];
 
-        const recruiterId = authUserId || user?.id || null;
+        const recruiterId = user?.id || null;
 
         if (recruiterId) {
           // Vagas do recrutador, apenas ativas (não expiradas)
@@ -79,19 +78,17 @@ export default function RecruiterVacanciesPage() {
     }
 
     fetchData();
-  }, [authUserId, user]);
+  }, [user]);
 
   const handleDelete = async (vacancyId: string) => {
     if (!confirm('Tem a certeza que deseja excluir esta vaga? Esta ação não pode ser desfeita.')) return;
 
     try {
-      await deleteVacancy(vacancyId);
-      
-      // Atualizar a lista de vagas após a exclusão
-      if (authUserId) {
-        const updatedJobs = await getRecruiterVacancies(authUserId, true);
-        setVacancies(updatedJobs);
-      }
+      setDeletingVacancyId(vacancyId);
+      const ok = await deleteVacancy(vacancyId);
+      if (!ok) throw new Error('Falha ao excluir vaga.');
+      setVacancies((prev) => prev.filter((v) => v.id !== vacancyId));
+      setApplications((prev) => prev.filter((a) => a.job_posting_id !== vacancyId));
       
       toast({
         title: 'Vaga Excluída!',
@@ -104,6 +101,8 @@ export default function RecruiterVacanciesPage() {
         description: 'Não foi possível excluir a vaga. Tente novamente.',
         variant: 'destructive',
       });
+    } finally {
+      setDeletingVacancyId(null);
     }
   };
 
@@ -188,13 +187,15 @@ export default function RecruiterVacanciesPage() {
             <div className="space-y-6">
                 {paginatedJobs.map(vacancy => {
                     const { total, interesting } = getApplicationCounts(vacancy.id);
+                    const typeLabel = (vacancy as any).type ?? vacancy.job_type;
+                    const categoryLabel = (vacancy as any).category ?? (vacancy as any).functional_area ?? '—';
                     return (
                         <Card key={vacancy.id}>
                             <CardHeader>
                             <div className="flex justify-between items-start">
                                 <div>
                                 <CardTitle>{vacancy.title}</CardTitle>
-                                <CardDescription>{vacancy.location} &middot; {vacancy.category}</CardDescription>
+                                <CardDescription>{vacancy.location} &middot; {categoryLabel}</CardDescription>
                                 </div>
                                 <div className="flex items-center gap-2">
                                      <Tooltip>
@@ -221,7 +222,7 @@ export default function RecruiterVacanciesPage() {
                                             <p>{interesting} candidatos interessantes/em processo</p>
                                         </TooltipContent>
                                     </Tooltip>
-                                    <Badge>{vacancy.type}</Badge>
+                                    <Badge>{typeLabel}</Badge>
                                 </div>
                             </div>
                             </CardHeader>
@@ -237,7 +238,7 @@ export default function RecruiterVacanciesPage() {
                                     <Button variant="outline" size="sm" asChild>
                                         <Link href={`/dashboard/recruiter/vacancies/${vacancy.id}/edit`}>Editar</Link>
                                     </Button>
-                                    <Button variant="destructive" size="sm" onClick={() => handleDelete(vacancy.id)}>Excluir</Button>
+                                    <Button variant="destructive" size="sm" onClick={() => handleDelete(vacancy.id)} disabled={deletingVacancyId === vacancy.id}>Excluir</Button>
                                     <Button variant="secondary" size="sm" asChild>
                                         <Link href={`/dashboard/recruiter/vacancies/${vacancy.id}/applications`}>Gerir Candidatos</Link>
                                     </Button>

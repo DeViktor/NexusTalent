@@ -2,8 +2,7 @@
 
 import Image from 'next/image';
 import Link from 'next/link';
-import { type BlogPost } from '@/lib/blog-posts';
-import { getImages } from '@/lib/site-data';
+import { type BlogPost } from '@/lib/supabase/blog-service';
 import { Header } from '@/components/layout/header';
 import { Footer } from '@/components/layout/footer';
 import { Badge } from '@/components/ui/badge';
@@ -19,9 +18,8 @@ interface BlogPostContentProps {
 }
 
 export function BlogPostContent({ post, relatedPosts }: BlogPostContentProps) {
-  const images = getImages();
-  const image = images.find(p => p.id === post.imageId);
-  const authorAvatar = images.find(p => p.id === post.authorAvatarId);
+  const imageSrc = post.imageUrl || null;
+  const authorAvatarUrl = post.authorAvatarUrl || null;
 
   const getInitials = (name: string) => {
     if (!name) return '';
@@ -48,10 +46,10 @@ export function BlogPostContent({ post, relatedPosts }: BlogPostContentProps) {
                 {post.title}
               </h1>
               <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                {authorAvatar && (
+                {authorAvatarUrl && (
                     <div className="flex items-center gap-2">
                         <Avatar className="h-8 w-8">
-                            <AvatarImage src={authorAvatar.imageUrl} />
+                            <AvatarImage src={authorAvatarUrl} />
                             <AvatarFallback>{getInitials(post.author)}</AvatarFallback>
                         </Avatar>
                         <span>{post.author}</span>
@@ -61,21 +59,20 @@ export function BlogPostContent({ post, relatedPosts }: BlogPostContentProps) {
               </div>
             </header>
 
-            {image && (
+            {imageSrc && (
               <div className="relative w-full h-64 md:h-96 rounded-xl overflow-hidden mb-8 shadow-lg">
                 <Image
-                  src={image.imageUrl}
-                  alt={image.description}
+                  src={imageSrc}
+                  alt={post.title}
                   fill
                   className="object-cover"
-                  data-ai-hint={image.imageHint}
                 />
               </div>
             )}
 
             <div
               className="prose dark:prose-invert prose-lg max-w-none prose-h3:font-headline prose-h3:text-foreground prose-a:text-primary hover:prose-a:text-primary/80 prose-strong:text-foreground prose-li:marker:text-primary"
-              dangerouslySetInnerHTML={{ __html: post.content }}
+              dangerouslySetInnerHTML={{ __html: post.contentHtml }}
             />
           </article>
         </div>

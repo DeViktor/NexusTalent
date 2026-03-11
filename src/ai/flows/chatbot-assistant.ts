@@ -3,54 +3,65 @@
  * @fileOverview A chatbot assistant to help users navigate the platform.
  */
 
-import { ai } from '@/ai/genkit';
+import { getAi } from '@/ai/genkit';
 import { z } from 'zod';
 import { searchCourses, searchJobs } from '@/lib/chatbot-service';
 import { ChatbotAssistanceInputSchema, ChatbotAssistanceOutputSchema, type ChatbotAssistanceInput, type ChatbotAssistanceOutput } from '@/lib/schemas';
 
 
-export async function chatbotAssistance(input: ChatbotAssistanceInput): Promise<ChatbotAssistanceOutput> {
-  return chatbotAssistanceFlow(input);
-}
+type Runtime = {
+  chatbotAssistanceFlow: (input: ChatbotAssistanceInput) => Promise<ChatbotAssistanceOutput>;
+};
 
-const findCoursesTool = ai.defineTool(
-    {
-      name: 'findCourses',
-      description: 'Searches for available courses based on a query.',
-      inputSchema: z.object({ query: z.string().describe('The search term for courses, like a topic or course name.') }),
-      outputSchema: z.array(z.object({
-          id: z.string(),
-          name: z.string(),
-          category: z.string(),
-          format: z.string(),
-          generalObjective: z.string(),
-      })),
-    },
-    async ({ query }) => searchCourses(query)
-  );
-  
-  const findJobsTool = ai.defineTool(
-    {
-      name: 'findJobs',
-      description: 'Searches for available job postings based on a query.',
-      inputSchema: z.object({ query: z.string().describe('The search term for jobs, like a job title or location.') }),
-      outputSchema: z.array(z.object({
-          id: z.string(),
-          title: z.string(),
-          location: z.string(),
-          type: z.string(),
-          description: z.string(),
-      })),
-    },
-    async ({ query }) => searchJobs(query)
-  );
+const runtimeCache = new Map<string, Runtime>();
 
-const prompt = ai.definePrompt({
-    name: 'chatbotAssistancePrompt',
-    input: { schema: ChatbotAssistanceInputSchema },
-    output: { schema: ChatbotAssistanceOutputSchema },
-    tools: [findCoursesTool, findJobsTool],
-    prompt: `You are a friendly and helpful AI assistant for the NexusTalent platform. Your goal is to provide comprehensive answers about the platform's services, features, and guide users to the correct pages.
+function getRuntime(apiKey?: string | null): Runtime {
+  const key = typeof apiKey === 'string' ? apiKey.trim() : '';
+  if (!key) throw new Error('IA não configurada.');
+  const cacheKey = key;
+  const existing = runtimeCache.get(cacheKey);
+  if (existing) return existing;
+
+  const ai = getAi(key);
+
+  const findCoursesTool = ai.defineTool(
+      {
+        name: 'findCourses',
+        description: 'Searches for available courses based on a query.',
+        inputSchema: z.object({ query: z.string().describe('The search term for courses, like a topic or course name.') }),
+        outputSchema: z.array(z.object({
+            id: z.string(),
+            name: z.string(),
+            category: z.string(),
+            format: z.string(),
+            generalObjective: z.string(),
+        })),
+      },
+      async ({ query }) => searchCourses(query)
+    );
+    
+    const findJobsTool = ai.defineTool(
+      {
+        name: 'findJobs',
+        description: 'Searches for available job postings based on a query.',
+        inputSchema: z.object({ query: z.string().describe('The search term for jobs, like a job title or location.') }),
+        outputSchema: z.array(z.object({
+            id: z.string(),
+            title: z.string(),
+            location: z.string(),
+            type: z.string(),
+            description: z.string(),
+        })),
+      },
+      async ({ query }) => searchJobs(query)
+    );
+
+  const prompt = ai.definePrompt({
+      name: 'chatbotAssistancePrompt',
+      input: { schema: ChatbotAssistanceInputSchema },
+      output: { schema: ChatbotAssistanceOutputSchema },
+      tools: [findCoursesTool, findJobsTool],
+      prompt: `You are a friendly and helpful AI assistant for the NexusTalent platform. Your goal is to provide comprehensive answers about the platform's services, features, and guide users to the correct pages.
 
 - Your name is 'Nexus Assistant'.
 - Be concise, professional, and direct in your answers.
@@ -72,16 +83,25 @@ NexusTalent is a complete platform for professional training and recruitment, co
 
 - The current page context is: '{{{context}}}'
 - The user's question is: '{{{query}}}'`,
-});
+  });
 
-const chatbotAssistanceFlow = ai.defineFlow(
-  {
-    name: 'chatbotAssistanceFlow',
-    inputSchema: ChatbotAssistanceInputSchema,
-    outputSchema: ChatbotAssistanceOutputSchema,
-  },
-  async (input) => {
-    const { output } = await prompt(input);
-    return output!;
-  }
-);
+  const chatbotAssistanceFlow = ai.defineFlow(
+    {
+      name: 'chatbotAssistanceFlow',
+      inputSchema: ChatbotAssistanceInputSchema,
+      outputSchema: ChatbotAssistanceOutputSchema,
+    },
+    async (input) => {
+      const { output } = await prompt(input);
+      return output!;
+    }
+  );
+
+  const runtime = { chatbotAssistanceFlow };
+  runtimeCache.set(cacheKey, runtime);
+  return runtime;
+}
+
+export async function chatbotAssistance(input: ChatbotAssistanceInput, apiKey?: string | null): Promise<ChatbotAssistanceOutput> {
+  return getRuntime(apiKey).chatbotAssistanceFlow(input);
+}

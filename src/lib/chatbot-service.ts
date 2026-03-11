@@ -1,9 +1,9 @@
 import { getCourses } from './course-service';
 import { getJobs } from './vacancy-service';
 
-export function searchCourses(query: string) {
+export async function searchCourses(query: string) {
     const lowerCaseQuery = query.toLowerCase();
-    const allCourses = getCourses();
+    const allCourses = await getCourses();
     
     const filtered = allCourses.filter(course => 
         course.name.toLowerCase().includes(lowerCaseQuery) ||
@@ -20,9 +20,9 @@ export function searchCourses(query: string) {
     }));
 }
 
-export function searchJobs(query: string) {
+export async function searchJobs(query: string) {
     const lowerCaseQuery = query.toLowerCase();
-    const allJobs = getJobs(); // Get only active jobs
+    const allJobs = await getJobs(); // Get only active jobs
 
     const filtered = allJobs.filter(job =>
         job.title.toLowerCase().includes(lowerCaseQuery) ||

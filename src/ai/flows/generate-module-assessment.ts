@@ -7,7 +7,7 @@
  * - GenerateModuleAssessmentOutput - The return type for the function.
  */
 
-import { ai } from '@/ai/genkit';
+import { getAi } from '@/ai/genkit';
 import { z } from 'zod';
 import { GenerateModuleAssessmentInputSchema, GenerateModuleAssessmentOutputSchema } from '@/lib/schemas';
 
@@ -15,15 +15,26 @@ export type GenerateModuleAssessmentInput = z.infer<typeof GenerateModuleAssessm
 export type GenerateModuleAssessmentOutput = z.infer<typeof GenerateModuleAssessmentOutputSchema>;
 
 
-export async function generateModuleAssessment(input: GenerateModuleAssessmentInput): Promise<GenerateModuleAssessmentOutput> {
-  return generateModuleAssessmentFlow(input);
-}
+type Runtime = {
+  generateModuleAssessmentFlow: (input: GenerateModuleAssessmentInput) => Promise<GenerateModuleAssessmentOutput>;
+};
 
-const prompt = ai.definePrompt({
-  name: 'generateModuleAssessmentPrompt',
-  input: { schema: GenerateModuleAssessmentInputSchema },
-  output: { schema: GenerateModuleAssessmentOutputSchema },
-  prompt: `You are an expert in creating educational assessments. Your task is to generate a quiz based on a course module's title, topics, and requested parameters.
+const runtimeCache = new Map<string, Runtime>();
+
+function getRuntime(apiKey?: string | null): Runtime {
+  const key = typeof apiKey === 'string' ? apiKey.trim() : '';
+  if (!key) throw new Error('IA não configurada.');
+  const cacheKey = key;
+  const existing = runtimeCache.get(cacheKey);
+  if (existing) return existing;
+
+  const ai = getAi(key);
+
+  const prompt = ai.definePrompt({
+    name: 'generateModuleAssessmentPrompt',
+    input: { schema: GenerateModuleAssessmentInputSchema },
+    output: { schema: GenerateModuleAssessmentOutputSchema },
+    prompt: `You are an expert in creating educational assessments. Your task is to generate a quiz based on a course module's title, topics, and requested parameters.
 
 Module Title:
 {{{moduleTitle}}}
@@ -40,16 +51,25 @@ Generate a quiz with:
 - {{{numShortAnswer}}} short-answer questions. Each must have an ideal, concise answer.
 
 The questions should be clear, directly related to the topics, and suitable for the specified difficulty level.`,
-});
+  });
 
-const generateModuleAssessmentFlow = ai.defineFlow(
-  {
-    name: 'generateModuleAssessmentFlow',
-    inputSchema: GenerateModuleAssessmentInputSchema,
-    outputSchema: GenerateModuleAssessmentOutputSchema,
-  },
-  async input => {
-    const { output } = await prompt(input);
-    return output!;
-  }
-);
+  const generateModuleAssessmentFlow = ai.defineFlow(
+    {
+      name: 'generateModuleAssessmentFlow',
+      inputSchema: GenerateModuleAssessmentInputSchema,
+      outputSchema: GenerateModuleAssessmentOutputSchema,
+    },
+    async input => {
+      const { output } = await prompt(input);
+      return output!;
+    }
+  );
+
+  const runtime = { generateModuleAssessmentFlow };
+  runtimeCache.set(cacheKey, runtime);
+  return runtime;
+}
+
+export async function generateModuleAssessment(input: GenerateModuleAssessmentInput, apiKey?: string | null): Promise<GenerateModuleAssessmentOutput> {
+  return getRuntime(apiKey).generateModuleAssessmentFlow(input);
+}

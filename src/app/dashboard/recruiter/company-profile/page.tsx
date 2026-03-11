@@ -11,7 +11,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { ArrowLeft, Building, Save, Image as ImageIcon, PlusCircle, Trash2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useRouter } from 'next/navigation';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import Image from 'next/image';
 
 const formSchema = z.object({
@@ -24,35 +24,24 @@ const formSchema = z.object({
 
 type FormValues = z.infer<typeof formSchema>;
 
-// Mock data, in a real app this would come from an API/DB
-const companyProfileData = {
-    companyName: "NexusTalent Corp",
-    about: "A NexusTalent é uma empresa líder em soluções de recrutamento e formação, conectando os melhores talentos às oportunidades mais desafiadoras do mercado. Com uma abordagem inovadora e tecnológica, ajudamos empresas a construir equipas de alta performance.",
-    culture: "A nossa cultura é baseada na colaboração, inovação e desenvolvimento contínuo. Valorizamos a transparência e um ambiente de trabalho que promove o crescimento pessoal e profissional de cada colaborador.",
-    values: "Inovação, Excelência, Colaboração, Integridade",
-    benefits: [
-        {value: "Plano de Saúde"},
-        {value: "Vale Refeição"},
-        {value: "Trabalho Híbrido"},
-        {value: "Formação Contínua"},
-        {value: "Bónus Anual"}
-    ],
-    photos: [
-        'https://images.unsplash.com/photo-1522071820081-009f0129c71c?w=400&h=300&fit=crop',
-        'https://images.unsplash.com/photo-1556761175-5973dc0f32e7?w=400&h=300&fit=crop',
-        'https://images.unsplash.com/photo-1552664730-d307ca884978?w=400&h=300&fit=crop',
-    ]
-}
-
 
 export default function CompanyProfilePage() {
     const router = useRouter();
     const { toast } = useToast();
     const [isSaving, setIsSaving] = useState(false);
+    const [isLoading, setIsLoading] = useState(true);
+    const [photos, setPhotos] = useState<string[]>([]);
+    const [newPhotoUrl, setNewPhotoUrl] = useState('');
 
     const form = useForm<FormValues>({
         resolver: zodResolver(formSchema),
-        defaultValues: companyProfileData
+        defaultValues: {
+            companyName: '',
+            about: '',
+            culture: '',
+            values: '',
+            benefits: [{ value: '' }],
+        }
     });
     
     const { fields, append, remove } = useFieldArray({
@@ -60,17 +49,65 @@ export default function CompanyProfilePage() {
         name: 'benefits',
     });
 
+    useEffect(() => {
+        let active = true;
+        (async () => {
+            try {
+                const res = await fetch('/api/recruiter/company-profile', { cache: 'no-store', credentials: 'include' });
+                const json = await res.json();
+                if (!active) return;
+                if (!res.ok || !json?.ok) throw new Error(json?.error || 'Falha ao carregar perfil.');
+                const profile = json.profile as any;
+                if (!profile) {
+                    form.reset({ companyName: '', about: '', culture: '', values: '', benefits: [{ value: '' }] });
+                    setPhotos([]);
+                } else {
+                    form.reset({
+                        companyName: String(profile.companyName || ''),
+                        about: String(profile.about || ''),
+                        culture: String(profile.culture || ''),
+                        values: String(profile.values || ''),
+                        benefits: Array.isArray(profile.benefits) && profile.benefits.length > 0 ? profile.benefits : [{ value: '' }],
+                    });
+                    setPhotos(Array.isArray(profile.photos) ? profile.photos : []);
+                }
+            } catch (e: any) {
+                toast({ variant: 'destructive', title: 'Erro', description: e?.message || 'Falha ao carregar perfil.' });
+            } finally {
+                if (active) setIsLoading(false);
+            }
+        })();
+        return () => { active = false; };
+    }, [form, toast]);
 
     const handleSave: SubmitHandler<FormValues> = async (data) => {
         setIsSaving(true);
-        // Simulate API call
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        console.log("Saving company profile:", data);
-        toast({
-            title: "Perfil Atualizado!",
-            description: "As informações da sua empresa foram guardadas com sucesso.",
-        });
-        setIsSaving(false);
+        try {
+            const res = await fetch('/api/recruiter/company-profile', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
+                body: JSON.stringify({ ...data, photos }),
+            });
+            const json = await res.json();
+            if (!res.ok || !json?.ok) throw new Error(json?.error || 'Falha ao salvar perfil.');
+            toast({ title: "Perfil Atualizado!", description: "As informações da sua empresa foram guardadas com sucesso." });
+        } catch (e: any) {
+            toast({ variant: 'destructive', title: 'Erro', description: e?.message || 'Falha ao salvar perfil.' });
+        } finally {
+            setIsSaving(false);
+        }
+    };
+
+    const handleAddPhoto = () => {
+        const url = newPhotoUrl.trim();
+        if (!url) return;
+        setPhotos((prev) => [...prev, url]);
+        setNewPhotoUrl('');
+    };
+
+    const handleRemovePhoto = (index: number) => {
+        setPhotos((prev) => prev.filter((_, i) => i !== index));
     };
 
     return (
@@ -168,24 +205,26 @@ export default function CompanyProfilePage() {
                         </CardHeader>
                         <CardContent>
                              <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                                {companyProfileData.photos.map((photo, index) => (
+                                {photos.map((photo, index) => (
                                     <div key={index} className="relative aspect-video rounded-lg overflow-hidden group">
                                         <Image src={photo} alt={`Foto da empresa ${index + 1}`} fill className="object-cover" />
                                         <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                                            <Button variant="destructive" size="icon"><Trash2 /></Button>
+                                            <Button type="button" variant="destructive" size="icon" onClick={() => handleRemovePhoto(index)}><Trash2 /></Button>
                                         </div>
                                     </div>
                                 ))}
-                                 <Button variant="outline" className="aspect-video flex-col border-dashed h-full">
-                                    <PlusCircle className="h-8 w-8 text-muted-foreground mb-2"/>
-                                    Adicionar Foto
-                                </Button>
+                                <div className="aspect-video border border-dashed rounded-lg p-3 flex flex-col justify-center gap-2">
+                                    <Input value={newPhotoUrl} onChange={(e) => setNewPhotoUrl(e.target.value)} placeholder="URL da foto" />
+                                    <Button type="button" variant="outline" onClick={handleAddPhoto} disabled={newPhotoUrl.trim().length === 0}>
+                                        <PlusCircle className="mr-2 h-4 w-4"/> Adicionar Foto
+                                    </Button>
+                                </div>
                             </div>
                         </CardContent>
                     </Card>
 
                     <div className="flex justify-end">
-                        <Button type="submit" size="lg" disabled={isSaving}>
+                        <Button type="submit" size="lg" disabled={isSaving || isLoading}>
                             {isSaving ? <><Save className="mr-2 h-4 w-4 animate-spin"/> A Guardar...</> : <><Save className="mr-2 h-4 w-4"/> Guardar Alterações</>}
                         </Button>
                     </div>

@@ -9,7 +9,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { ArrowLeft, Loader2, Tag, Lock, QrCode } from 'lucide-react';
 import { Header } from '@/components/layout/header';
 import { Footer } from '@/components/layout/footer';
-import { getImages } from '@/lib/site-data';
 import Image from 'next/image';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -59,8 +58,7 @@ export default function CheckoutPage() {
     return notFound();
   }
 
-  const image = getImages().find(p => p.id === course.imageId);
-  const imageSrc = course.imageDataUri || image?.imageUrl;
+  const imageSrc = course.imageDataUri || null;
   
   const handlePayment = (method: string) => {
     setIsProcessing(true);

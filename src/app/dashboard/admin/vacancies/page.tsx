@@ -62,10 +62,22 @@ export default function ManageVacanciesPage() {
   }
 
   const handleExportXLS = () => {
-    toast({
-      title: 'Relatório Gerado (Simulação)',
-      description: 'O seu relatório de vagas em formato XLS foi descarregado.',
-    });
+    const header = ['ID', 'Título', 'Localização', 'Status', 'Tipo', 'Empresa'];
+    const rows = vacancies.map((v) => [v.id, v.title, v.location, v.status, v.employmentType, v.company]);
+    const table = [header, ...rows]
+      .map((r) => `<tr>${r.map((cell) => `<td>${String(cell ?? '').replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')}</td>`).join('')}</tr>`)
+      .join('');
+    const html = `<!doctype html><html><head><meta charset="utf-8" /></head><body><table>${table}</table></body></html>`;
+    const blob = new Blob([html], { type: 'application/vnd.ms-excel;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `vagas-${new Date().toISOString().slice(0, 10)}.xls`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    toast({ title: 'Exportação concluída', description: 'Relatório de vagas exportado.' });
   };
 
   const handleGenerateReport = () => {
@@ -182,14 +194,16 @@ export default function ManageVacanciesPage() {
                     <DialogTrigger asChild>
                         <Button variant="default" onClick={handleGenerateReport}>Gerar Relatório PDF</Button>
                     </DialogTrigger>
-                    <DialogContent className="max-w-4xl max-h-[90vh]">
+                    <DialogContent className="max-w-4xl h-[90vh] flex flex-col overflow-hidden">
                         <DialogHeader>
                             <DialogTitle>Relatório de Vagas</DialogTitle>
                             <DialogDescription>
                                 Visão geral das vagas na plataforma.
                             </DialogDescription>
                         </DialogHeader>
-                        {reportData && <GeneralReport data={reportData} reportType="vacancies" />}
+                        <div className="flex-1 min-h-0">
+                            {reportData && <GeneralReport data={reportData} reportType="vacancies" />}
+                        </div>
                     </DialogContent>
                 </Dialog>
                 <Button asChild>

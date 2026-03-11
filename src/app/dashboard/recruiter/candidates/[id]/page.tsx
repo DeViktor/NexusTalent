@@ -1,8 +1,7 @@
 
 'use client';
 
-import { notFound, useRouter, useParams } from "next/navigation";
-import { users } from "@/lib/users";
+import { useRouter, useParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -12,6 +11,7 @@ import Link from "next/link";
 import React, { useEffect, useState } from 'react';
 import { format, parseISO } from 'date-fns';
 import { pt } from 'date-fns/locale';
+import { getUserById, mapUserRowToUserProfile, type UserRow } from "@/lib/supabase/user-service";
 
 function ProfileView({ profile }: { profile: UserProfile }) {
     const router = useRouter();
@@ -168,20 +168,57 @@ export default function CandidateProfilePage() {
   const params = useParams();
   const id = Array.isArray(params.id) ? params.id[0] : params.id;
   const [candidate, setCandidate] = useState<UserProfile | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [notFoundCandidate, setNotFoundCandidate] = useState(false);
+
+  const mapRowToProfile = (row: UserRow): UserProfile => {
+    const base = mapUserRowToUserProfile(row);
+    const anyRow = row as any;
+    return {
+      ...base,
+      academicTitle: anyRow.academic_title || anyRow.professional_title || anyRow.academicTitle || anyRow.professionalTitle || base.academicTitle,
+      functionalArea: anyRow.functional_area || anyRow.functionalArea || base.functionalArea,
+      yearsOfExperience: anyRow.years_of_experience || anyRow.yearsOfExperience || base.yearsOfExperience,
+      professionalLevel: anyRow.professional_level || anyRow.professionalLevel || base.professionalLevel,
+      nationality: anyRow.nationality || base.nationality,
+      cidade: anyRow.city || anyRow.cidade || base.cidade,
+      gender: anyRow.gender || base.gender,
+      dateOfBirth: anyRow.date_of_birth || anyRow.dateOfBirth || base.dateOfBirth,
+      phoneNumber: anyRow.phone || anyRow.phone_number || anyRow.phoneNumber || base.phoneNumber,
+      languages: anyRow.languages || base.languages,
+      skills: anyRow.skills || base.skills,
+      resumeUrl: anyRow.resume_url || anyRow.resumeUrl || base.resumeUrl,
+      workExperience: anyRow.work_experience || anyRow.workExperience || base.workExperience,
+      academicHistory: anyRow.academic_history || anyRow.academicHistory || base.academicHistory,
+      certifications: anyRow.certifications || base.certifications,
+    } as UserProfile;
+  };
 
   useEffect(() => {
-    if (id) {
-        const foundCandidate = users.find(u => u.id === id && u.userType === 'student');
-        if (!foundCandidate) {
-            notFound();
+    let active = true;
+    (async () => {
+      if (!id) return;
+      try {
+        setIsLoading(true);
+        setNotFoundCandidate(false);
+        const row = await getUserById(id);
+        if (!active) return;
+        if (!row) {
+          setNotFoundCandidate(true);
+          setCandidate(null);
+          return;
         }
-        setCandidate(foundCandidate || null);
-    }
+        const profile = mapRowToProfile(row);
+        setCandidate(profile);
+      } finally {
+        if (active) setIsLoading(false);
+      }
+    })();
+    return () => { active = false; };
   }, [id]);
 
-  if (!candidate) {
-    return null; // Or a loading skeleton
-  }
+  if (isLoading) return <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-8">A carregar...</div>;
+  if (notFoundCandidate || !candidate) return <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-8">Candidato não encontrado.</div>;
 
   return <ProfileView profile={candidate} />;
 }

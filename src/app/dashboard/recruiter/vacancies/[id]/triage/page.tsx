@@ -78,6 +78,7 @@ export default function TriagePage() {
                         userType: 'student',
                         profilePictureUrl: app.users?.avatar_url,
                         summary: app.users?.bio,
+                        resumeUrl: app.users?.resume_url ?? undefined,
                         academicTitle: undefined,
                         cidade: undefined,
                         languages: [],
@@ -98,14 +99,15 @@ export default function TriagePage() {
         setIsAnalyzing(true);
         const jobDescription = `${vacancy.title}\n\n${vacancy.description}\n\nResponsabilidades:\n${(vacancy.responsibilities || []).join('\n')}\n\nRequisitos:\n${(vacancy.requirements || []).join('\n')}`;
 
-        // Mock file fetching and analysis
         const updatedCandidates = await Promise.all(
             candidates.map(async (candidate) => {
-                // In a real app, you'd fetch the resume file from storage (e.g., candidate.resumeUrl)
-                // Here we simulate it by creating a dummy file object for the purpose of the action.
-                // The actual content analysis is mocked by the AI flow. We just need the structure.
                 try {
-                     const resumeDataUri = "data:application/pdf;base64,JVBERi0xLjcK..."; // Dummy base64 data
+                     if (!candidate.resumeUrl) return { ...candidate, score: 0 };
+                     const res = await fetch(candidate.resumeUrl);
+                     if (!res.ok) return { ...candidate, score: 0 };
+                     const blob = await res.blob();
+                     const file = new File([blob], 'resume', { type: blob.type || 'application/pdf' });
+                     const resumeDataUri = await fileToDataUri(file);
                      const result = await analyzeResumeAction({ jobDescription, resumeDataUri });
                      return { ...candidate, score: result.candidateRanking };
                 } catch (error) {

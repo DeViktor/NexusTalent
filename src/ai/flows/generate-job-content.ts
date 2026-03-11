@@ -7,7 +7,7 @@
  * - GenerateJobContentOutput - The return type for the generateJobContent function.
  */
 
-import {ai} from '@/ai/genkit';
+import { getAi } from '@/ai/genkit';
 import {z} from 'genkit';
 import { GenerateJobContentInputSchema, GenerateJobContentOutputSchema } from '@/lib/schemas';
 
@@ -16,15 +16,26 @@ export type GenerateJobContentInput = z.infer<typeof GenerateJobContentInputSche
 export type GenerateJobContentOutput = z.infer<typeof GenerateJobContentOutputSchema>;
 
 
-export async function generateJobContent(input: GenerateJobContentInput): Promise<GenerateJobContentOutput> {
-  return generateJobContentFlow(input);
-}
+type Runtime = {
+  generateJobContentFlow: (input: GenerateJobContentInput) => Promise<GenerateJobContentOutput>;
+};
 
-const prompt = ai.definePrompt({
-  name: 'generateJobContentPrompt',
-  input: {schema: GenerateJobContentInputSchema},
-  output: {schema: GenerateJobContentOutputSchema},
-  prompt: `You are an expert recruiter. Based on the job title, category, industry, minimum experience, and demand level, generate a detailed job description in Portuguese. 
+const runtimeCache = new Map<string, Runtime>();
+
+function getRuntime(apiKey?: string | null): Runtime {
+  const key = typeof apiKey === 'string' ? apiKey.trim() : '';
+  if (!key) throw new Error('IA não configurada.');
+  const cacheKey = key;
+  const existing = runtimeCache.get(cacheKey);
+  if (existing) return existing;
+
+  const ai = getAi(key);
+
+  const prompt = ai.definePrompt({
+    name: 'generateJobContentPrompt',
+    input: {schema: GenerateJobContentInputSchema},
+    output: {schema: GenerateJobContentOutputSchema},
+    prompt: `You are an expert recruiter. Based on the job title, category, industry, minimum experience, and demand level, generate a detailed job description in Portuguese. 
 The description should include a general summary, a list of key responsibilities, a list of required qualifications and skills, and a list of 3-5 insightful, open-ended screening questions to help filter candidates.
 
 Job Title: {{{title}}}
@@ -33,16 +44,26 @@ Industry: {{{industry}}}
 Minimum Experience: {{{minExperience}}}
 Demand Level: {{{demandLevel}}}
 `,
-});
-
-const generateJobContentFlow = ai.defineFlow(
-  {
-    name: 'generateJobContentFlow',
-    inputSchema: GenerateJobContentInputSchema,
-    outputSchema: GenerateJobContentOutputSchema,
   },
-  async input => {
-    const {output} = await prompt(input);
-    return output!;
-  }
-);
+  );
+
+  const generateJobContentFlow = ai.defineFlow(
+    {
+      name: 'generateJobContentFlow',
+      inputSchema: GenerateJobContentInputSchema,
+      outputSchema: GenerateJobContentOutputSchema,
+    },
+    async input => {
+      const {output} = await prompt(input);
+      return output!;
+    }
+  );
+
+  const runtime = { generateJobContentFlow };
+  runtimeCache.set(cacheKey, runtime);
+  return runtime;
+}
+
+export async function generateJobContent(input: GenerateJobContentInput, apiKey?: string | null): Promise<GenerateJobContentOutput> {
+  return getRuntime(apiKey).generateJobContentFlow(input);
+}

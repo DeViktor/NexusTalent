@@ -1,10 +1,11 @@
+'use client';
+
 import * as React from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import type { Course } from '@/lib/types';
 import { Card, CardContent } from '@/components/ui/card';
 import { getCourseCategories } from '@/lib/course-service';
-import { getImages } from '@/lib/site-data';
 import { Badge } from '@/components/ui/badge';
 import { ArrowRight, Heart } from 'lucide-react';
 import { useWishlist } from '@/hooks/use-wishlist.tsx';
@@ -24,9 +25,7 @@ export function CourseCard({ course }: CourseCardProps) {
       if (found) setCategoryName(found.name);
     });
   }, [course.category]);
-  const images = getImages();
-  const image = images.find(p => p.id === course.imageId);
-  const imageSrc = course.imageDataUri || image?.imageUrl;
+  const imageSrc = course.imageDataUri || null;
 
   const { wishlist, toggleWishlist } = useWishlist();
   const isInWishlist = wishlist.includes(course.id);
@@ -52,10 +51,9 @@ export function CourseCard({ course }: CourseCardProps) {
           {imageSrc ? (
             <Image
               src={imageSrc}
-              alt={image?.description || course.name}
+              alt={course.name}
               fill
               className="object-cover"
-              data-ai-hint={image?.imageHint}
             />
           ) : (
             <div className="w-full h-full bg-secondary"></div>

@@ -19,48 +19,27 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { useToast } from '@/hooks/use-toast';
 
-const initialTeamMembers = [
-    {
-        id: 'rec1',
-        name: 'Ana Silva',
-        email: 'ana.silva@empresa.com',
-        role: 'Admin',
-        status: 'Ativo'
-    },
-    {
-        id: 'rec2',
-        name: 'Carlos Martins',
-        email: 'carlos.martins@empresa.com',
-        role: 'Recrutador',
-        status: 'Ativo'
-    },
-     {
-        id: 'rec3',
-        name: 'Beatriz Costa',
-        email: 'beatriz.costa@empresa.com',
-        role: 'Gestor de Contratação',
-        status: 'Convidado'
-    }
-];
-
-type TeamMember = typeof initialTeamMembers[0];
-
 const memberSchema = z.object({
-  name: z.string().min(3, { message: 'O nome deve ter pelo menos 3 caracteres.' }),
   email: z.string().email({ message: 'Por favor, insira um email válido.' }),
   role: z.enum(['Admin', 'Recrutador', 'Gestor de Contratação'], { required_error: 'Por favor, selecione uma função.' }),
 });
 
 type MemberFormValues = z.infer<typeof memberSchema>;
 
+type TeamRow =
+    | { kind: 'member'; id: string; userId: string; name: string; email: string; role: string; status: string }
+    | { kind: 'invite'; id: string; name: string; email: string; role: string; status: string };
+
 export default function ManageTeamPage() {
     const router = useRouter();
     const { toast } = useToast();
-    const [teamMembers, setTeamMembers] = useState<TeamMember[]>(initialTeamMembers);
+    const [teamMembers, setTeamMembers] = useState<TeamRow[]>([]);
     const [searchTerm, setSearchTerm] = useState('');
     const [isFormOpen, setIsFormOpen] = useState(false);
     const [isAlertOpen, setIsAlertOpen] = useState(false);
-    const [selectedMember, setSelectedMember] = useState<TeamMember | null>(null);
+    const [selectedMember, setSelectedMember] = useState<TeamRow | null>(null);
+    const [isLoading, setIsLoading] = useState(true);
+    const [isMutating, setIsMutating] = useState(false);
 
     const form = useForm<MemberFormValues>({
         resolver: zodResolver(memberSchema),
@@ -69,14 +48,32 @@ export default function ManageTeamPage() {
     useEffect(() => {
         if (selectedMember) {
             form.reset({
-                name: selectedMember.name,
                 email: selectedMember.email,
                 role: selectedMember.role as 'Admin' | 'Recrutador' | 'Gestor de Contratação',
             });
         } else {
-            form.reset({ name: '', email: '', role: 'Recrutador' });
+            form.reset({ email: '', role: 'Recrutador' });
         }
     }, [selectedMember, form]);
+
+    const loadTeam = async () => {
+        setIsLoading(true);
+        try {
+            const res = await fetch('/api/recruiter/team', { cache: 'no-store', credentials: 'include' });
+            const json = await res.json();
+            if (!res.ok || !json?.ok) throw new Error(json?.error || 'Falha ao carregar equipa.');
+            setTeamMembers(Array.isArray(json.team) ? json.team : []);
+        } catch (e: any) {
+            setTeamMembers([]);
+            toast({ variant: 'destructive', title: 'Erro', description: e?.message || 'Falha ao carregar equipa.' });
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    useEffect(() => {
+        loadTeam();
+    }, []);
 
     const filteredUsers = useMemo(() => {
         if (!searchTerm) return teamMembers;
@@ -86,38 +83,102 @@ export default function ManageTeamPage() {
         );
     }, [teamMembers, searchTerm]);
 
-    const handleOpenForm = (member: TeamMember | null) => {
+    const handleOpenForm = (member: TeamRow | null) => {
         setSelectedMember(member);
         setIsFormOpen(true);
     }
 
-    const handleOpenAlert = (member: TeamMember) => {
+    const handleOpenAlert = (member: TeamRow) => {
         setSelectedMember(member);
         setIsAlertOpen(true);
     }
 
-    const onSubmit: SubmitHandler<MemberFormValues> = (data) => {
-        if (selectedMember) { // Editing
-            setTeamMembers(prev => prev.map(m => m.id === selectedMember.id ? { ...selectedMember, ...data } : m));
-            toast({ title: "Membro Atualizado", description: `Os dados de ${data.name} foram atualizados.` });
-        } else { // Adding
-            const newMember: TeamMember = {
-                id: `rec${Date.now()}`,
-                ...data,
-                status: 'Convidado'
-            };
-            setTeamMembers(prev => [newMember, ...prev]);
-            toast({ title: "Convite Enviado", description: `Um convite foi enviado para ${data.name}.` });
+    const onSubmit: SubmitHandler<MemberFormValues> = async (data) => {
+        if (isMutating) return;
+        setIsMutating(true);
+        try {
+            if (selectedMember && selectedMember.kind === 'member') {
+                const res = await fetch(`/api/recruiter/team/member/${selectedMember.id}`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'include',
+                    body: JSON.stringify({ role: data.role }),
+                });
+                const json = await res.json();
+                if (!res.ok || !json?.ok) throw new Error(json?.error || 'Falha ao atualizar membro.');
+                toast({ title: "Membro Atualizado", description: `A função de ${selectedMember.name} foi atualizada.` });
+            } else {
+                const res = await fetch('/api/recruiter/team/invite', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'include',
+                    body: JSON.stringify({ email: data.email, role: data.role }),
+                });
+                const json = await res.json();
+                if (!res.ok || !json?.ok) throw new Error(json?.error || 'Falha ao enviar convite.');
+                toast({ title: "Convite Enviado", description: `Um convite foi enviado para ${data.email}.` });
+            }
+            setIsFormOpen(false);
+            setSelectedMember(null);
+            await loadTeam();
+        } catch (e: any) {
+            toast({ variant: 'destructive', title: 'Erro', description: e?.message || 'Falha ao salvar.' });
+        } finally {
+            setIsMutating(false);
         }
-        setIsFormOpen(false);
     };
 
-    const handleDelete = () => {
+    const handleDelete = async () => {
         if (!selectedMember) return;
-        setTeamMembers(prev => prev.filter(m => m.id !== selectedMember.id));
-        toast({ title: "Membro Removido", description: `${selectedMember.name} foi removido da equipa.` });
-        setIsAlertOpen(false);
+        if (isMutating) return;
+        setIsMutating(true);
+        try {
+            if (selectedMember.kind === 'member') {
+                const res = await fetch(`/api/recruiter/team/member/${selectedMember.id}`, { method: 'DELETE', credentials: 'include' });
+                const json = await res.json();
+                if (!res.ok || !json?.ok) throw new Error(json?.error || 'Falha ao remover membro.');
+                toast({ title: "Membro Removido", description: `${selectedMember.name} foi removido da equipa.` });
+            } else {
+                const res = await fetch(`/api/recruiter/team/invite/${selectedMember.id}`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'include',
+                    body: JSON.stringify({ action: 'revoke' }),
+                });
+                const json = await res.json();
+                if (!res.ok || !json?.ok) throw new Error(json?.error || 'Falha ao revogar convite.');
+                toast({ title: "Convite Revogado", description: `O convite de ${selectedMember.email} foi revogado.` });
+            }
+            setIsAlertOpen(false);
+            setSelectedMember(null);
+            await loadTeam();
+        } catch (e: any) {
+            toast({ variant: 'destructive', title: 'Erro', description: e?.message || 'Falha ao remover.' });
+        } finally {
+            setIsMutating(false);
+        }
     }
+
+    const handleResendInvite = async (inviteId: string, email: string) => {
+        if (isMutating) return;
+        setIsMutating(true);
+        try {
+            const res = await fetch(`/api/recruiter/team/invite/${inviteId}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
+                body: JSON.stringify({ action: 'resend' }),
+            });
+            const json = await res.json();
+            if (!res.ok || !json?.ok) throw new Error(json?.error || 'Falha ao reenviar convite.');
+            toast({ title: "Convite Reenviado", description: `Convite reenviado para ${email}.` });
+            await loadTeam();
+        } catch (e: any) {
+            toast({ variant: 'destructive', title: 'Erro', description: e?.message || 'Falha ao reenviar.' });
+        } finally {
+            setIsMutating(false);
+        }
+    };
 
     return (
          <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -164,7 +225,15 @@ export default function ManageTeamPage() {
                             </TableRow>
                         </TableHeader>
                         <TableBody>
-                            {filteredUsers.map((member) => (
+                            {isLoading ? (
+                                <TableRow>
+                                    <TableCell colSpan={5} className="text-sm text-muted-foreground">A carregar...</TableCell>
+                                </TableRow>
+                            ) : filteredUsers.length === 0 ? (
+                                <TableRow>
+                                    <TableCell colSpan={5} className="text-sm text-muted-foreground">Nenhum membro.</TableCell>
+                                </TableRow>
+                            ) : filteredUsers.map((member) => (
                                 <TableRow key={member.id}>
                                     <TableCell className="font-medium">{member.name}</TableCell>
                                     <TableCell>{member.email}</TableCell>
@@ -188,7 +257,9 @@ export default function ManageTeamPage() {
                                             </DropdownMenuTrigger>
                                             <DropdownMenuContent align="end">
                                             <DropdownMenuItem onClick={() => handleOpenForm(member)}>Editar</DropdownMenuItem>
-                                            {member.status === 'Convidado' && <DropdownMenuItem>Reenviar Convite</DropdownMenuItem>}
+                                            {member.kind === 'invite' && member.status === 'Convidado' && (
+                                                <DropdownMenuItem onClick={() => handleResendInvite(member.id, member.email)}>Reenviar Convite</DropdownMenuItem>
+                                            )}
                                             <DropdownMenuItem className="text-destructive" onClick={() => handleOpenAlert(member)}>
                                                 Remover
                                             </DropdownMenuItem>
@@ -212,13 +283,20 @@ export default function ManageTeamPage() {
                     </DialogHeader>
                     <Form {...form}>
                         <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-                            <FormField control={form.control} name="name" render={({ field }) => (<FormItem><FormLabel>Nome Completo</FormLabel><FormControl><Input placeholder="Nome do membro" {...field} /></FormControl><FormMessage /></FormItem>)} />
-                            <FormField control={form.control} name="email" render={({ field }) => (<FormItem><FormLabel>Email</FormLabel><FormControl><Input type="email" placeholder="email@empresa.com" {...field} /></FormControl><FormMessage /></FormItem>)} />
+                            <FormField control={form.control} name="email" render={({ field }) => (
+                                <FormItem>
+                                    <FormLabel>Email</FormLabel>
+                                    <FormControl>
+                                        <Input type="email" placeholder="email@empresa.com" {...field} disabled={!!selectedMember && selectedMember.kind === 'member'} />
+                                    </FormControl>
+                                    <FormMessage />
+                                </FormItem>
+                            )} />
                             <FormField control={form.control} name="role" render={({ field }) => (<FormItem><FormLabel>Função</FormLabel><Select onValueChange={field.onChange} defaultValue={field.value}><FormControl><SelectTrigger><SelectValue placeholder="Selecione uma função" /></SelectTrigger></FormControl><SelectContent><SelectItem value="Admin">Admin</SelectItem><SelectItem value="Recrutador">Recrutador</SelectItem><SelectItem value="Gestor de Contratação">Gestor de Contratação</SelectItem></SelectContent></Select><FormMessage /></FormItem>)} />
                             <DialogFooter>
                                 <Button type="button" variant="outline" onClick={() => setIsFormOpen(false)}>Cancelar</Button>
-                                <Button type="submit" disabled={form.formState.isSubmitting}>
-                                    {form.formState.isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                                <Button type="submit" disabled={form.formState.isSubmitting || isMutating}>
+                                    {(form.formState.isSubmitting || isMutating) && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                                     {selectedMember ? 'Guardar Alterações' : 'Enviar Convite'}
                                 </Button>
                             </DialogFooter>
@@ -237,7 +315,10 @@ export default function ManageTeamPage() {
                     </AlertDialogHeader>
                     <AlertDialogFooter>
                         <AlertDialogCancel>Cancelar</AlertDialogCancel>
-                        <AlertDialogAction onClick={handleDelete} className="bg-destructive hover:bg-destructive/90">Remover</AlertDialogAction>
+                        <AlertDialogAction onClick={handleDelete} className="bg-destructive hover:bg-destructive/90" disabled={isMutating}>
+                            {isMutating && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                            Remover
+                        </AlertDialogAction>
                     </AlertDialogFooter>
                 </AlertDialogContent>
             </AlertDialog>

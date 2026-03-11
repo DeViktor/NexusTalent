@@ -6,19 +6,30 @@
  * - aiResumeAnalysis - A function that handles the resume analysis process.
  */
 
-import {ai} from '@/ai/genkit';
+import { getAi } from '@/ai/genkit';
 import {z} from 'genkit';
 import { AIResumeAnalysisInputSchema, AIResumeAnalysisOutputSchema, type AIResumeAnalysisInput, type AIResumeAnalysisOutput } from '@/lib/schemas';
 
-export async function aiResumeAnalysis(input: AIResumeAnalysisInput): Promise<AIResumeAnalysisOutput> {
-  return aiResumeAnalysisFlow(input);
-}
+type Runtime = {
+  aiResumeAnalysisFlow: (input: AIResumeAnalysisInput) => Promise<AIResumeAnalysisOutput>;
+};
 
-const prompt = ai.definePrompt({
-  name: 'aiResumeAnalysisPrompt',
-  input: {schema: AIResumeAnalysisInputSchema},
-  output: {schema: AIResumeAnalysisOutputSchema},
-  prompt: `You are an expert recruiter specializing in candidate evaluation.
+const runtimeCache = new Map<string, Runtime>();
+
+function getRuntime(apiKey?: string | null): Runtime {
+  const key = typeof apiKey === 'string' ? apiKey.trim() : '';
+  if (!key) throw new Error('IA não configurada.');
+  const cacheKey = key;
+  const existing = runtimeCache.get(cacheKey);
+  if (existing) return existing;
+
+  const ai = getAi(key);
+
+  const prompt = ai.definePrompt({
+    name: 'aiResumeAnalysisPrompt',
+    input: {schema: AIResumeAnalysisInputSchema},
+    output: {schema: AIResumeAnalysisOutputSchema},
+    prompt: `You are an expert recruiter specializing in candidate evaluation.
 
 You will use this information to evaluate the candidate, and rank them based on their resume.
 
@@ -30,16 +41,25 @@ Candidate Ranking (1-100): Rank the candidate from 1 to 100, with 100 being the 
 Candidate Summary: Summarize the candidate's resume.
 Key Skills Match: List the key skills that match the job description.
 Areas for Improvement: List areas for improvement for the candidate.`,
-});
+  });
 
-const aiResumeAnalysisFlow = ai.defineFlow(
-  {
-    name: 'aiResumeAnalysisFlow',
-    inputSchema: AIResumeAnalysisInputSchema,
-    outputSchema: AIResumeAnalysisOutputSchema,
-  },
-  async input => {
-    const {output} = await prompt(input);
-    return output!;
-  }
-);
+  const aiResumeAnalysisFlow = ai.defineFlow(
+    {
+      name: 'aiResumeAnalysisFlow',
+      inputSchema: AIResumeAnalysisInputSchema,
+      outputSchema: AIResumeAnalysisOutputSchema,
+    },
+    async input => {
+      const {output} = await prompt(input);
+      return output!;
+    }
+  );
+
+  const runtime = { aiResumeAnalysisFlow };
+  runtimeCache.set(cacheKey, runtime);
+  return runtime;
+}
+
+export async function aiResumeAnalysis(input: AIResumeAnalysisInput, apiKey?: string | null): Promise<AIResumeAnalysisOutput> {
+  return getRuntime(apiKey).aiResumeAnalysisFlow(input);
+}

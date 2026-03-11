@@ -5,20 +5,31 @@
  * - extractProfileFromResume - A function that handles the resume parsing process.
  */
 
-import { ai } from '@/ai/genkit';
+import { getAi } from '@/ai/genkit';
 import { z } from 'genkit';
 import { ExtractProfileFromResumeInputSchema, ExtractProfileFromResumeOutputSchema, type ExtractProfileFromResumeInput, type ExtractProfileFromResumeOutput } from '@/lib/schemas';
 
 
-export async function extractProfileFromResume(input: ExtractProfileFromResumeInput): Promise<ExtractProfileFromResumeOutput> {
-  return extractProfileFromResumeFlow(input);
-}
+type Runtime = {
+  extractProfileFromResumeFlow: (input: ExtractProfileFromResumeInput) => Promise<ExtractProfileFromResumeOutput>;
+};
 
-const prompt = ai.definePrompt({
-  name: 'extractProfileFromResumePrompt',
-  input: { schema: ExtractProfileFromResumeInputSchema },
-  output: { schema: ExtractProfileFromResumeOutputSchema },
-  prompt: `You are an expert HR assistant. Your task is to analyze the provided resume and extract structured information to fill out a user's professional profile. Be as accurate as possible.
+const runtimeCache = new Map<string, Runtime>();
+
+function getRuntime(apiKey?: string | null): Runtime {
+  const key = typeof apiKey === 'string' ? apiKey.trim() : '';
+  if (!key) throw new Error('IA não configurada.');
+  const cacheKey = key;
+  const existing = runtimeCache.get(cacheKey);
+  if (existing) return existing;
+
+  const ai = getAi(key);
+
+  const prompt = ai.definePrompt({
+    name: 'extractProfileFromResumePrompt',
+    input: { schema: ExtractProfileFromResumeInputSchema },
+    output: { schema: ExtractProfileFromResumeOutputSchema },
+    prompt: `You are an expert HR assistant. Your task is to analyze the provided resume and extract structured information to fill out a user's professional profile. Be as accurate as possible.
 
 Resume: {{media url=resumeDataUri}}
 
@@ -32,16 +43,25 @@ Extract the following information in Portuguese:
 - Skills: A list of relevant technical and soft skills.
 - Academic History: A list of all academic qualifications.
 - Work Experience: A list of all professional experiences, including company, role, period, and a brief description.`,
-});
+  });
 
-const extractProfileFromResumeFlow = ai.defineFlow(
-  {
-    name: 'extractProfileFromResumeFlow',
-    inputSchema: ExtractProfileFromResumeInputSchema,
-    outputSchema: ExtractProfileFromResumeOutputSchema,
-  },
-  async input => {
-    const { output } = await prompt(input);
-    return output!;
-  }
-);
+  const extractProfileFromResumeFlow = ai.defineFlow(
+    {
+      name: 'extractProfileFromResumeFlow',
+      inputSchema: ExtractProfileFromResumeInputSchema,
+      outputSchema: ExtractProfileFromResumeOutputSchema,
+    },
+    async input => {
+      const { output } = await prompt(input);
+      return output!;
+    }
+  );
+
+  const runtime = { extractProfileFromResumeFlow };
+  runtimeCache.set(cacheKey, runtime);
+  return runtime;
+}
+
+export async function extractProfileFromResume(input: ExtractProfileFromResumeInput, apiKey?: string | null): Promise<ExtractProfileFromResumeOutput> {
+  return getRuntime(apiKey).extractProfileFromResumeFlow(input);
+}

@@ -1,8 +1,8 @@
 'use client';
 import { Book, Users, Star, Layers } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { getSiteData, type SiteStat } from '@/lib/site-data';
-import { supabase } from '@/lib/supabase/client';
+ 
+type SiteStat = { label: string; value: string };
 
 const iconMap: { [key: string]: React.ElementType } = {
     'Cursos Disponíveis': Book,
@@ -16,26 +16,17 @@ export function StatsSection() {
 
     useEffect(() => {
         async function loadData() {
-            try {
-                // Fetch real counts from Supabase
-                const [coursesRes, usersRes, vacanciesRes] = await Promise.all([
-                    supabase.from('courses').select('id', { count: 'exact', head: true }),
-                    supabase.from('users').select('id', { count: 'exact', head: true }),
-                    supabase.from('vacancies').select('id', { count: 'exact', head: true }),
-                ]);
-
-                const newStats: SiteStat[] = [
-                    { label: 'Cursos Disponíveis', value: `${coursesRes.count ?? 0}+` },
-                    { label: 'Alunos Formados', value: `${(usersRes.count ?? 0) * 12}+` }, // Just a multiplier for effect if it's a demo
-                    { label: 'Taxa de Satisfação', value: '98%' },
-                    { label: 'Oportunidades', value: `${vacanciesRes.count ?? 0}+` },
-                ];
-                setStats(newStats);
-            } catch (error) {
-                console.error('Error fetching stats:', error);
-                const data = await getSiteData();
-                setStats(data.stats);
-            }
+            const res = await fetch('/api/public/stats', { cache: 'no-store' });
+            const json = await res.json().catch(() => null);
+            if (!res.ok || !json?.ok) return;
+            const s = json.stats || {};
+            const newStats: SiteStat[] = [
+                { label: 'Cursos Disponíveis', value: `${Number(s.courses || 0)}+` },
+                { label: 'Alunos Formados', value: `${Number(s.students || 0)}+` },
+                { label: 'Taxa de Satisfação', value: String(s.satisfaction || '—') },
+                { label: 'Oportunidades', value: `${Number(s.vacancies || 0)}+` },
+            ];
+            setStats(newStats);
         }
         loadData();
     }, []);

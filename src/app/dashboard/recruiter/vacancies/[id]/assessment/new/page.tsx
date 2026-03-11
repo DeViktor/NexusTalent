@@ -13,13 +13,11 @@ import { useToast } from '@/hooks/use-toast';
 import { generateAssessmentTestAction } from '@/app/actions';
 import type { AssessmentTest, Vacancy } from '@/lib/types';
 import { useRouter, useParams, notFound } from 'next/navigation';
-import { getVacancyById } from '@/lib/vacancy-service';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { GenerateAssessmentTestInputSchema, GenerateAssessmentTestOutputSchema } from '@/lib/schemas';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { addTest } from '@/lib/test-service';
 
 
 type FormValues = z.infer<typeof GenerateAssessmentTestInputSchema>;
@@ -46,14 +44,40 @@ export default function NewAssessmentPage() {
   });
 
   useEffect(() => {
-    if (vacancyId) {
-      const foundVacancy = getVacancyById(vacancyId);
-      setVacancy(foundVacancy);
-      if (foundVacancy) {
-         const fullJobDescription = `${foundVacancy.title}\n\n${foundVacancy.description}\n\nResponsabilidades:\n${foundVacancy.responsibilities.join('\n')}\n\nRequisitos:\n${foundVacancy.requirements.join('\n')}`;
-         form.setValue('jobDescription', fullJobDescription);
+    if (!vacancyId) return;
+    let active = true;
+    (async () => {
+      try {
+        const res = await fetch(`/api/recruiter/vacancies/${vacancyId}`, { cache: 'no-store', credentials: 'include' });
+        const json = await res.json();
+        if (!res.ok || !json?.ok) throw new Error(json?.error || 'Falha ao carregar vaga.');
+        if (!active) return;
+        const v = json.vacancy;
+        const mapped = {
+          id: String(v.id),
+          title: String(v.title || ''),
+          description: String(v.description || ''),
+          location: String(v.location || ''),
+          closingDate: v.closing_date ? new Date(String(v.closing_date)) : null,
+          postedDate: v.created_at ? new Date(String(v.created_at)) : new Date(),
+          company: String(v.company || ''),
+          recruiterId: String(v.recruiter_id || ''),
+          status: String(v.status || 'Ativo') as any,
+          employmentType: String(v.employment_type || '') as any,
+          salaryRange: v.salary_range ?? null,
+          requirements: Array.isArray(v.requirements) ? v.requirements : [],
+          responsibilities: Array.isArray(v.responsibilities) ? v.responsibilities : [],
+          benefits: Array.isArray(v.benefits) ? v.benefits : [],
+          category: String(v.category || ''),
+        } as Vacancy;
+        setVacancy(mapped);
+        const fullJobDescription = `${mapped.title}\n\n${mapped.description}\n\nResponsabilidades:\n${mapped.responsibilities.join('\n')}\n\nRequisitos:\n${mapped.requirements.join('\n')}`;
+        form.setValue('jobDescription', fullJobDescription);
+      } catch {
+        if (active) setVacancy(null);
       }
-    }
+    })();
+    return () => { active = false; };
   }, [vacancyId, form]);
 
   const handleGenerateTest: SubmitHandler<FormValues> = async (data) => {
@@ -88,25 +112,24 @@ export default function NewAssessmentPage() {
     setIsSaving(true);
     
     try {
-      const testToSave: AssessmentTest = {
-        ...generatedTest,
-        vacancyId: vacancyId
-      };
-      addTest(testToSave);
-
-      toast({
-          title: "Teste Salvo!",
-          description: "O teste foi associado a esta vaga.",
+      const res = await fetch(`/api/recruiter/vacancies/${vacancyId}/assessments`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ title: generatedTest.title, description: generatedTest.description || null, questions: generatedTest.questions }),
       });
-      setIsSaving(false);
-      router.push(`/dashboard/recruiter/vacancies`);
+      const json = await res.json();
+      if (!res.ok || !json?.ok) throw new Error(json?.error || 'Falha ao salvar teste.');
+      toast({ title: "Teste Salvo!", description: "O teste foi associado a esta vaga." });
+      router.push(`/dashboard/recruiter/vacancies/${vacancyId}/assessment`);
 
     } catch(error) {
        toast({
             variant: "destructive",
             title: "Erro ao Salvar",
-            description: "Não foi possível salvar o teste. Tente novamente.",
+            description: error instanceof Error ? error.message : "Não foi possível salvar o teste. Tente novamente.",
         });
+    } finally {
        setIsSaving(false);
     }
   };

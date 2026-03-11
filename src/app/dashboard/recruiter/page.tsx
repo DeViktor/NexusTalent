@@ -5,23 +5,9 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Briefcase, Users, FileText, PlusCircle, MessageSquare, ClipboardCheck, BarChart, TrendingUp, CheckCircle, Building, UserPlus } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
-// import { getVacancies } from "@/lib/vacancy-service";
-import type { Vacancy } from "@/lib/types";
-import { Skeleton } from "@/components/ui/skeleton";
 import { useState, useEffect } from "react";
-import { users } from "@/lib/users";
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart"
-import { Bar, BarChart as RechartsBarChart, ResponsiveContainer, XAxis, YAxis } from "recharts"
-import { getVacancies } from "@/lib/supabase/vacancy-service";
-
-const chartData = [
-  { month: "Jan", applications: 186, hired: 80 },
-  { month: "Feb", applications: 305, hired: 200 },
-  { month: "Mar", applications: 237, hired: 120 },
-  { month: "Apr", applications: 73, hired: 190 },
-  { month: "May", applications: 209, hired: 130 },
-  { month: "Jun", applications: 214, hired: 140 },
-]
+import { Bar, BarChart as RechartsBarChart, XAxis, YAxis } from "recharts"
 
 const chartConfig = {
   applications: {
@@ -62,7 +48,47 @@ function VacancyList({ recruiterId }: { recruiterId: string }) {
 
 
 export default function RecruiterDashboardPage() {
-    // Sessão Supabase usada nos fluxos de navegação; o ID do utilizador é obtido nas páginas de vagas
+    const [isLoading, setIsLoading] = useState(true);
+    const [hasMetrics, setHasMetrics] = useState(false);
+    const [scope, setScope] = useState<'recruiter' | 'global'>('recruiter');
+    const [kpis, setKpis] = useState({
+        activeVacancies: 0,
+        newApplications7d: 0,
+        hiresThisQuarter: 0,
+        hireRate: 0,
+    });
+    const [chartData, setChartData] = useState<{ month: string; applications: number; hired: number }[]>([]);
+    const [chartRangeLabel, setChartRangeLabel] = useState<string>("—");
+
+    useEffect(() => {
+        let active = true;
+        (async () => {
+            try {
+                setIsLoading(true);
+                setHasMetrics(false);
+                const res = await fetch('/api/recruiter/metrics', { credentials: 'include', cache: 'no-store' });
+                const json = await res.json();
+                if (!res.ok || !json?.ok) throw new Error(json?.error || 'Falha ao carregar métricas.');
+                if (!active) return;
+                setScope(json.scope);
+                setChartRangeLabel(json.chart?.rangeLabel || '—');
+                setChartData(Array.isArray(json.chart?.data) ? json.chart.data : []);
+                setKpis({
+                    activeVacancies: Number(json.kpis?.activeVacancies || 0),
+                    newApplications7d: Number(json.kpis?.newApplications7d || 0),
+                    hiresThisQuarter: Number(json.kpis?.hiresThisQuarter || 0),
+                    hireRate: Number(json.kpis?.hireRate || 0),
+                });
+                setHasMetrics(true);
+            } catch {
+                if (!active) return;
+                setHasMetrics(false);
+            } finally {
+                if (active) setIsLoading(false);
+            }
+        })();
+        return () => { active = false; };
+    }, []);
 
     return (
         <div>
@@ -80,8 +106,8 @@ export default function RecruiterDashboardPage() {
                             <Briefcase className="h-4 w-4 text-muted-foreground" />
                         </CardHeader>
                         <CardContent>
-                            <div className="text-2xl font-bold">3</div>
-                            <p className="text-xs text-muted-foreground">+2 que no mês passado</p>
+                            <div className="text-2xl font-bold">{isLoading || !hasMetrics ? "—" : kpis.activeVacancies}</div>
+                            <p className="text-xs text-muted-foreground">ativas (não expiradas)</p>
                         </CardContent>
                     </Card>
                      <Card>
@@ -90,7 +116,7 @@ export default function RecruiterDashboardPage() {
                             <Users className="h-4 w-4 text-muted-foreground" />
                         </CardHeader>
                         <CardContent>
-                            <div className="text-2xl font-bold">+52</div>
+                            <div className="text-2xl font-bold">{isLoading || !hasMetrics ? "—" : kpis.newApplications7d}</div>
                             <p className="text-xs text-muted-foreground">nos últimos 7 dias</p>
                         </CardContent>
                     </Card>
@@ -100,7 +126,7 @@ export default function RecruiterDashboardPage() {
                             <CheckCircle className="h-4 w-4 text-muted-foreground" />
                         </CardHeader>
                         <CardContent>
-                            <div className="text-2xl font-bold">+5</div>
+                            <div className="text-2xl font-bold">{isLoading || !hasMetrics ? "—" : kpis.hiresThisQuarter}</div>
                             <p className="text-xs text-muted-foreground">neste trimestre</p>
                         </CardContent>
                     </Card>
@@ -110,8 +136,8 @@ export default function RecruiterDashboardPage() {
                             <TrendingUp className="h-4 w-4 text-muted-foreground" />
                         </CardHeader>
                         <CardContent>
-                            <div className="text-2xl font-bold">12%</div>
-                             <p className="text-xs text-muted-foreground">+3% que no trimestre passado</p>
+                            <div className="text-2xl font-bold">{isLoading || !hasMetrics ? "—" : `${kpis.hireRate}%`}</div>
+                             <p className="text-xs text-muted-foreground">neste trimestre</p>
                         </CardContent>
                     </Card>
                 </div>
@@ -119,10 +145,10 @@ export default function RecruiterDashboardPage() {
                      <Card>
                         <CardHeader>
                             <CardTitle>Candidaturas vs. Contratações</CardTitle>
-                             <CardDescription>Janeiro - Junho 2024</CardDescription>
+                             <CardDescription>{chartRangeLabel}{scope === 'global' ? ' · visão geral' : ''}</CardDescription>
                         </CardHeader>
                         <CardContent>
-                             <ChartContainer config={chartConfig} className="h-64">
+                             <ChartContainer config={chartConfig} className="h-64 w-full aspect-auto justify-start">
                                 <RechartsBarChart accessibilityLayer data={chartData}>
                                     <XAxis dataKey="month" tickLine={false} tickMargin={10} axisLine={false} tickFormatter={(value) => value.slice(0, 3)} />
                                     <YAxis />

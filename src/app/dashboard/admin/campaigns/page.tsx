@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -12,7 +12,6 @@ import { format } from 'date-fns';
 import { pt } from 'date-fns/locale';
 import { Dialog, DialogTrigger, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { ResponsiveContainer, BarChart as RechartsBarChart, XAxis, YAxis, Tooltip, Bar, CartesianGrid, Legend } from 'recharts';
-import { users as allUsers } from '@/lib/users';
 import jsPDF from 'jspdf';
 import 'jspdf-autotable';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -24,49 +23,35 @@ declare module 'jspdf' {
   }
 }
 
-// Mock data
-const mockCampaigns = [
-    {
-        id: 'camp1',
-        subject: '🚀 Novo Curso de Liderança Disponível!',
-        sentDate: new Date(2024, 6, 28),
-        recipients: 1250,
-        openRate: 28.5,
-        clickRate: 4.2
-    },
-    {
-        id: 'camp2',
-        subject: 'Vaga Urgente: Desenvolvedor Frontend Sênior',
-        sentDate: new Date(2024, 7, 1),
-        recipients: 320,
-        openRate: 45.2,
-        clickRate: 12.8
-    },
-    {
-        id: 'camp3',
-        subject: 'Não perca as nossas promoções de Verão!',
-        sentDate: new Date(2024, 7, 5),
-        recipients: 2500,
-        openRate: 19.8,
-        clickRate: 2.1
-    }
-];
+type Campaign = { id: string; subject: string; sentDate: string | null; recipients: number; openRate: number; clickRate: number };
+type CampaignEvent = { id: string; name: string; email: string; action: 'Abertura' | 'Clique'; timestamp: string };
 
-// Mock detailed activity
-const mockActivity = allUsers.slice(0, 30).map((user, index) => ({
-    id: user.id,
-    name: `${user.firstName} ${user.lastName}`,
-    email: user.email,
-    action: index % 4 === 0 ? 'Clique' : 'Abertura',
-    timestamp: new Date(Date.now() - (index * 1000 * 60 * 45))
-}));
-
-
-const ReportDialog = ({ campaign }: { campaign: typeof mockCampaigns[0] }) => {
+const ReportDialog = ({ campaign }: { campaign: Campaign }) => {
     const reportData = [
         { name: 'Aberturas', value: campaign.openRate, fill: 'hsl(var(--chart-1))' },
         { name: 'Cliques', value: campaign.clickRate, fill: 'hsl(var(--chart-2))' },
     ];
+    const [events, setEvents] = useState<CampaignEvent[]>([]);
+    const [isLoading, setIsLoading] = useState(true);
+    
+    useEffect(() => {
+        let active = true;
+        (async () => {
+            setIsLoading(true);
+            try {
+                const res = await fetch(`/api/admin/email-campaigns/${campaign.id}/events`, { cache: 'no-store', credentials: 'include' });
+                const json = await res.json();
+                if (!res.ok || !json?.ok) throw new Error(json?.error || 'Falha ao carregar eventos.');
+                if (!active) return;
+                setEvents(Array.isArray(json.events) ? json.events : []);
+            } catch {
+                if (active) setEvents([]);
+            } finally {
+                if (active) setIsLoading(false);
+            }
+        })();
+        return () => { active = false; };
+    }, [campaign.id]);
     
     const handleDownloadPdf = () => {
         const doc = new jsPDF();
@@ -79,12 +64,12 @@ const ReportDialog = ({ campaign }: { campaign: typeof mockCampaigns[0] }) => {
         const tableColumn = ["Nome", "Email", "Ação", "Data"];
         const tableRows: any[][] = [];
 
-        mockActivity.forEach(activity => {
+        events.forEach(activity => {
             const activityData = [
                 activity.name,
                 activity.email,
                 activity.action,
-                format(activity.timestamp, "d MMM, yyyy HH:mm", { locale: pt }),
+                format(new Date(activity.timestamp), "d MMM, yyyy HH:mm", { locale: pt }),
             ];
             tableRows.push(activityData);
         });
@@ -145,12 +130,16 @@ const ReportDialog = ({ campaign }: { campaign: typeof mockCampaigns[0] }) => {
                                 </TableRow>
                             </TableHeader>
                             <TableBody>
-                                {mockActivity.map(activity => (
+                                {isLoading ? (
+                                    <TableRow><TableCell colSpan={4} className="text-sm text-muted-foreground">A carregar...</TableCell></TableRow>
+                                ) : events.length === 0 ? (
+                                    <TableRow><TableCell colSpan={4} className="text-sm text-muted-foreground">Sem eventos.</TableCell></TableRow>
+                                ) : events.map(activity => (
                                     <TableRow key={activity.id}>
                                         <TableCell>{activity.name}</TableCell>
                                         <TableCell>{activity.email}</TableCell>
                                         <TableCell><Badge variant={activity.action === 'Clique' ? 'default' : 'secondary'}>{activity.action}</Badge></TableCell>
-                                        <TableCell>{format(activity.timestamp, "d MMM, yyyy HH:mm", { locale: pt })}</TableCell>
+                                        <TableCell>{format(new Date(activity.timestamp), "d MMM, yyyy HH:mm", { locale: pt })}</TableCell>
                                     </TableRow>
                                 ))}
                             </TableBody>
@@ -170,7 +159,27 @@ const ReportDialog = ({ campaign }: { campaign: typeof mockCampaigns[0] }) => {
 
 export default function CampaignsPage() {
     const router = useRouter();
-    const [campaigns] = useState(mockCampaigns);
+    const [campaigns, setCampaigns] = useState<Campaign[]>([]);
+    const [isLoading, setIsLoading] = useState(true);
+
+    useEffect(() => {
+        let active = true;
+        (async () => {
+            setIsLoading(true);
+            try {
+                const res = await fetch('/api/admin/email-campaigns', { cache: 'no-store', credentials: 'include' });
+                const json = await res.json();
+                if (!res.ok || !json?.ok) throw new Error(json?.error || 'Falha ao carregar campanhas.');
+                if (!active) return;
+                setCampaigns(Array.isArray(json.campaigns) ? json.campaigns : []);
+            } catch {
+                if (active) setCampaigns([]);
+            } finally {
+                if (active) setIsLoading(false);
+            }
+        })();
+        return () => { active = false; };
+    }, []);
 
     return (
         <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -207,10 +216,14 @@ export default function CampaignsPage() {
                             </TableRow>
                         </TableHeader>
                         <TableBody>
-                            {campaigns.map((campaign) => (
+                            {isLoading ? (
+                                <TableRow><TableCell colSpan={6} className="text-sm text-muted-foreground">A carregar...</TableCell></TableRow>
+                            ) : campaigns.length === 0 ? (
+                                <TableRow><TableCell colSpan={6} className="text-sm text-muted-foreground">Nenhuma campanha.</TableCell></TableRow>
+                            ) : campaigns.map((campaign) => (
                                 <TableRow key={campaign.id}>
                                     <TableCell className="font-medium">{campaign.subject}</TableCell>
-                                    <TableCell>{format(campaign.sentDate, "d MMM, yyyy", { locale: pt })}</TableCell>
+                                    <TableCell>{campaign.sentDate ? format(new Date(campaign.sentDate), "d MMM, yyyy", { locale: pt }) : '—'}</TableCell>
                                     <TableCell>{campaign.recipients}</TableCell>
                                     <TableCell>
                                         <Badge variant="secondary">{campaign.openRate}%</Badge>

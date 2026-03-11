@@ -1,7 +1,7 @@
 
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useForm, SubmitHandler, useFieldArray } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
@@ -87,6 +87,8 @@ export default function NewCoursePage() {
   const { toast } = useToast();
   const router = useRouter();
   const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [courseCategories, setCourseCategories] = useState<CourseCategory[]>([]);
+  const warnedEmptyCategoriesRef = useRef(false);
   useEffect(() => {
     let active = true;
     (async () => {
@@ -105,18 +107,26 @@ export default function NewCoursePage() {
     })();
     return () => { active = false; };
   }, []);
-  const [courseCategories, setCourseCategories] = useState<CourseCategory[]>([]);
   useEffect(() => {
     let active = true;
     (async () => {
       try {
-        const cats = await getCourseCategories();
-        if (active) setCourseCategories(Array.isArray(cats) ? cats : []);
+        const categories = await getCourseCategories();
+        const next = Array.isArray(categories) ? categories : [];
+        if (active) setCourseCategories(next);
+        if (active && next.length === 0 && !warnedEmptyCategoriesRef.current) {
+          warnedEmptyCategoriesRef.current = true;
+          toast({
+            variant: 'destructive',
+            title: 'Categorias vazias',
+            description: 'O Supabase não tem categorias em course_categories. Rode a migration 20260310_seed_course_categories.sql ou faça o seed.',
+          });
+        }
       } catch {
         if (active) setCourseCategories([]);
       }
     })();
-    return () => { active = false };
+    return () => { active = false; };
   }, []);
 
 

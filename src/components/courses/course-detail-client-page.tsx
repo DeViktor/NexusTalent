@@ -1,7 +1,6 @@
 'use client';
 
 import { getCourseCategories } from "@/lib/course-service";
-import { getImages } from "@/lib/site-data";
 import { useRouter } from "next/navigation";
 import Image from 'next/image';
 import { Badge } from "@/components/ui/badge";
@@ -28,9 +27,7 @@ export function CourseDetailClientPage({ course }: { course: Course }) {
   }, [course.category]);
 
   const [relatedCourses, setRelatedCourses] = React.useState<Course[]>([]);
-  const image = getImages().find(p => p.id === course.imageId) || null;
-  
-  const imageSrc = course.imageDataUri || image?.imageUrl;
+  const imageSrc = course.imageDataUri || null;
 
   const [isLoggedIn, setIsLoggedIn] = React.useState(false);
   React.useEffect(() => {

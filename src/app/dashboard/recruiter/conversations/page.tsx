@@ -1,92 +1,137 @@
 
 'use client';
 
-import { useState, useEffect, use } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
-import { users } from '@/lib/users';
-import type { UserProfile } from '@/lib/types';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Send, ArrowLeft, Search, MessageSquare } from 'lucide-react';
-import { Card, CardHeader } from '@/components/ui/card';
 import Link from 'next/link';
 
-interface Message {
-  sender: 'recruiter' | 'candidate';
-  text: string;
-  timestamp: Date;
-}
-
-interface Conversation {
+type ApiListConversation = {
+  id: string;
   candidateId: string;
-  messages: Message[];
-}
+  candidateName: string;
+  candidateAvatarUrl?: string | null;
+  lastMessageText?: string | null;
+  lastMessageAt?: string | null;
+  updatedAt: string;
+};
 
-// Mock initial conversations
-const initialConversations: Conversation[] = [
-  {
-    candidateId: 'student2',
-    messages: [
-      { sender: 'recruiter', text: 'Olá Bruno, obrigado pelo seu interesse na vaga de Gestor de Projetos. O seu perfil parece muito interessante.', timestamp: new Date(Date.now() - 1000 * 60 * 60 * 24) },
-      { sender: 'candidate', text: 'Olá, muito obrigado pelo contacto. Fico contente em saber!', timestamp: new Date(Date.now() - 1000 * 60 * 50 * 24) },
-    ],
-  },
-   {
-    candidateId: 'student5',
-    messages: [
-      { sender: 'recruiter', text: 'Bom dia Elisa. Analisámos o seu CV e gostaríamos de saber mais sobre a sua experiência com IFRS.', timestamp: new Date(Date.now() - 1000 * 60 * 60 * 48) },
-    ],
-  },
-];
-
+type ApiConversation = {
+  id: string;
+  candidate: { id: string; name: string; avatarUrl?: string | null };
+  messages: { id: string; sender: 'recruiter' | 'candidate'; text: string; timestamp: string }[];
+};
 
 const getInitials = (name: string) => name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase();
 
 export default function ConversationsPage() {
   const searchParams = useSearchParams();
   const router = useRouter();
-  const [conversations, setConversations] = useState<Conversation[]>(initialConversations);
-  const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null);
+  const [conversations, setConversations] = useState<ApiListConversation[]>([]);
+  const [selectedConversation, setSelectedConversation] = useState<ApiConversation | null>(null);
   const [newMessage, setNewMessage] = useState('');
+  const [searchTerm, setSearchTerm] = useState('');
+  const [isLoadingList, setIsLoadingList] = useState(true);
+  const [isLoadingChat, setIsLoadingChat] = useState(false);
+  const [isSending, setIsSending] = useState(false);
 
   useEffect(() => {
-    const candidateIdToChat = searchParams.get('start_chat_with');
-    if (candidateIdToChat) {
-      // Check if a conversation already exists
-      let convo = conversations.find(c => c.candidateId === candidateIdToChat);
-      if (!convo) {
-        // If not, create a new one
-        convo = { candidateId: candidateIdToChat, messages: [] };
-        setConversations(prev => [convo!, ...prev]);
+    let active = true;
+    (async () => {
+      try {
+        setIsLoadingList(true);
+        const res = await fetch('/api/recruiter/conversations', { cache: 'no-store', credentials: 'include' });
+        const json = await res.json();
+        if (!res.ok || !json?.ok) throw new Error(json?.error || 'Falha ao carregar conversas.');
+        if (!active) return;
+        setConversations(Array.isArray(json.conversations) ? json.conversations : []);
+      } catch {
+        if (!active) return;
+        setConversations([]);
+      } finally {
+        if (active) setIsLoadingList(false);
       }
-      setSelectedConversation(convo);
+    })();
+    return () => { active = false; };
+  }, []);
+
+  const loadConversation = async (conversationId: string) => {
+    setIsLoadingChat(true);
+    try {
+      const res = await fetch(`/api/recruiter/conversations/${conversationId}`, { cache: 'no-store', credentials: 'include' });
+      const json = await res.json();
+      if (!res.ok || !json?.ok) throw new Error(json?.error || 'Falha ao carregar conversa.');
+      setSelectedConversation(json.conversation as ApiConversation);
+    } finally {
+      setIsLoadingChat(false);
     }
-  }, [searchParams, conversations]);
-
-  const handleSendMessage = () => {
-    if (newMessage.trim() === '' || !selectedConversation) return;
-
-    const message: Message = {
-      sender: 'recruiter',
-      text: newMessage,
-      timestamp: new Date(),
-    };
-
-    const updatedConversations = conversations.map(convo =>
-      convo.candidateId === selectedConversation.candidateId
-        ? { ...convo, messages: [...convo.messages, message] }
-        : convo
-    );
-
-    setConversations(updatedConversations);
-    setSelectedConversation(prev => prev ? { ...prev, messages: [...prev.messages, message] } : null);
-    setNewMessage('');
   };
 
-  const getCandidateProfile = (id: string): UserProfile | undefined => {
-    return users.find(u => u.id === id);
-  }
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      const candidateIdToChat = searchParams.get('start_chat_with');
+      if (!candidateIdToChat) return;
+      try {
+        const res = await fetch('/api/recruiter/conversations/start', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ candidateId: candidateIdToChat }),
+        });
+        const json = await res.json();
+        if (!res.ok || !json?.ok) return;
+        if (!active) return;
+        const conversationId = String(json.conversationId);
+        await loadConversation(conversationId);
+        const listRes = await fetch('/api/recruiter/conversations', { cache: 'no-store', credentials: 'include' });
+        const listJson = await listRes.json();
+        if (listRes.ok && listJson?.ok) setConversations(Array.isArray(listJson.conversations) ? listJson.conversations : []);
+      } catch {
+        if (!active) return;
+      }
+    })();
+    return () => { active = false; };
+  }, [searchParams]);
+
+  const handleSendMessage = () => {
+    if (newMessage.trim() === '' || !selectedConversation || isSending) return;
+    const conversationId = selectedConversation.id;
+    const text = newMessage.trim();
+    setIsSending(true);
+    (async () => {
+      try {
+        const res = await fetch(`/api/recruiter/conversations/${conversationId}/messages`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ text }),
+        });
+        const json = await res.json();
+        if (!res.ok || !json?.ok) return;
+        setNewMessage('');
+        await loadConversation(conversationId);
+        const listRes = await fetch('/api/recruiter/conversations', { cache: 'no-store', credentials: 'include' });
+        const listJson = await listRes.json();
+        if (listRes.ok && listJson?.ok) setConversations(Array.isArray(listJson.conversations) ? listJson.conversations : []);
+      } finally {
+        setIsSending(false);
+      }
+    })();
+  };
+
+  const filteredConversations = useMemo(() => {
+    const t = searchTerm.trim().toLowerCase();
+    if (!t) return conversations;
+    return conversations.filter((c) => {
+      const name = String(c.candidateName || '').toLowerCase();
+      const msg = String(c.lastMessageText || '').toLowerCase();
+      return name.includes(t) || msg.includes(t);
+    });
+  }, [conversations, searchTerm]);
 
   const renderConversationList = () => (
     <div className="flex flex-col h-full">
@@ -94,31 +139,32 @@ export default function ConversationsPage() {
         <h2 className="font-headline text-2xl font-bold">Conversas</h2>
          <div className="relative mt-4">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input placeholder="Pesquisar conversas..." className="pl-9" />
+            <Input placeholder="Pesquisar conversas..." className="pl-9" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
         </div>
       </div>
       <div className="flex-grow overflow-y-auto">
-        {conversations.map(convo => {
-          const candidate = getCandidateProfile(convo.candidateId);
-          if (!candidate) return null;
-          const lastMessage = convo.messages[convo.messages.length - 1];
+        {isLoadingList ? (
+          <div className="p-4 text-sm text-muted-foreground">A carregar...</div>
+        ) : filteredConversations.length === 0 ? (
+          <div className="p-4 text-sm text-muted-foreground">Nenhuma conversa.</div>
+        ) : filteredConversations.map(convo => {
           return (
             <div
-              key={convo.candidateId}
+              key={convo.id}
               className={`p-4 border-b cursor-pointer hover:bg-secondary ${selectedConversation?.candidateId === convo.candidateId ? 'bg-secondary' : ''}`}
-              onClick={() => setSelectedConversation(convo)}
+              onClick={() => loadConversation(convo.id)}
             >
               <div className="flex items-center gap-4">
                 <Avatar>
-                  <AvatarImage src={candidate.profilePictureUrl} />
-                  <AvatarFallback>{getInitials(`${candidate.firstName} ${candidate.lastName}`)}</AvatarFallback>
+                  <AvatarImage src={convo.candidateAvatarUrl ?? undefined} />
+                  <AvatarFallback>{getInitials(convo.candidateName)}</AvatarFallback>
                 </Avatar>
                 <div className="flex-grow">
-                  <h3 className="font-semibold">{candidate.firstName} {candidate.lastName}</h3>
-                  <p className="text-sm text-muted-foreground truncate">{lastMessage ? `${lastMessage.sender === 'recruiter' ? 'Você: ' : ''}${lastMessage.text}` : 'Nenhuma mensagem ainda'}</p>
+                  <h3 className="font-semibold">{convo.candidateName}</h3>
+                  <p className="text-sm text-muted-foreground truncate">{convo.lastMessageText ? convo.lastMessageText : 'Nenhuma mensagem ainda'}</p>
                 </div>
                 <div className="text-xs text-muted-foreground text-right">
-                  {lastMessage && new Date(lastMessage.timestamp).toLocaleDateString()}
+                  {convo.lastMessageAt && new Date(convo.lastMessageAt).toLocaleDateString()}
                 </div>
               </div>
             </div>
@@ -130,8 +176,7 @@ export default function ConversationsPage() {
 
   const renderChatView = () => {
     if (!selectedConversation) return null;
-    const candidate = getCandidateProfile(selectedConversation.candidateId);
-    if (!candidate) return null;
+    const candidate = selectedConversation.candidate;
 
     return (
       <div className="flex flex-col h-full">
@@ -140,24 +185,28 @@ export default function ConversationsPage() {
             <ArrowLeft />
           </Button>
           <Avatar>
-            <AvatarImage src={candidate.profilePictureUrl} />
-            <AvatarFallback>{getInitials(`${candidate.firstName} ${candidate.lastName}`)}</AvatarFallback>
+            <AvatarImage src={candidate.avatarUrl ?? undefined} />
+            <AvatarFallback>{getInitials(candidate.name)}</AvatarFallback>
           </Avatar>
           <div>
-            <h2 className="font-semibold">{candidate.firstName} {candidate.lastName}</h2>
+            <h2 className="font-semibold">{candidate.name}</h2>
             <Link href={`/dashboard/recruiter/candidates/${candidate.id}`} className="text-xs text-primary hover:underline">Ver Perfil</Link>
           </div>
         </div>
         <div className="flex-grow p-4 overflow-y-auto bg-slate-50">
           <div className="space-y-4">
-            {selectedConversation.messages.map((msg, index) => (
-              <div key={index} className={`flex ${msg.sender === 'recruiter' ? 'justify-end' : 'justify-start'}`}>
-                <div className={`max-w-xs lg:max-w-md p-3 rounded-lg ${msg.sender === 'recruiter' ? 'bg-primary text-primary-foreground' : 'bg-card border'}`}>
-                  <p className="text-sm">{msg.text}</p>
-                   <p className="text-xs opacity-70 mt-1 text-right">{new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
+            {isLoadingChat ? (
+              <div className="text-sm text-muted-foreground">A carregar...</div>
+            ) : selectedConversation.messages.length === 0 ? (
+              <div className="text-sm text-muted-foreground">Sem mensagens ainda.</div>
+            ) : selectedConversation.messages.map((msg) => (
+                <div key={msg.id} className={`flex ${msg.sender === 'recruiter' ? 'justify-end' : 'justify-start'}`}>
+                  <div className={`max-w-xs lg:max-w-md p-3 rounded-lg ${msg.sender === 'recruiter' ? 'bg-primary text-primary-foreground' : 'bg-card border'}`}>
+                    <p className="text-sm">{msg.text}</p>
+                    <p className="text-xs opacity-70 mt-1 text-right">{new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
+                  </div>
                 </div>
-              </div>
-            ))}
+              ))}
           </div>
         </div>
         <div className="p-4 border-t bg-background">
@@ -167,8 +216,9 @@ export default function ConversationsPage() {
               value={newMessage}
               onChange={(e) => setNewMessage(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && handleSendMessage()}
+              disabled={isSending}
             />
-            <Button onClick={handleSendMessage}>
+            <Button onClick={handleSendMessage} disabled={isSending}>
               <Send className="h-4 w-4" />
             </Button>
           </div>

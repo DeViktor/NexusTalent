@@ -19,9 +19,6 @@ import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
 import { cn } from '@/lib/utils';
 import { getTemplates, type EmailTemplate } from '@/lib/email-templates';
-import { users as allUsers } from '@/lib/users';
-import { getCourses, getCourseCategories } from '@/lib/course-service';
-import { getVacancies } from '@/lib/vacancy-service';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
@@ -57,15 +54,40 @@ export default function EmailMarketingPage() {
   const router = useRouter();
   const templates = getTemplates();
   const [audienceCount, setAudienceCount] = useState(0);
-  const [courses, setCourses] = useState<Course[]>([]);
-  const [vacancies, setVacancies] = useState<Vacancy[]>([]);
+  const [courses, setCourses] = useState<Array<{ id: string; name: string }>>([]);
+  const [vacancies, setVacancies] = useState<Array<{ id: string; title: string }>>([]);
   const [functionalAreas, setFunctionalAreas] = useState<string[]>([]);
+
+  const applyTemplateAssets = (html: string, assets: { logoUrl?: string; imageUrl1?: string; imageUrl2?: string }) => {
+    let out = html;
+    const logo = (assets.logoUrl || '').trim();
+    if (logo) {
+      out = out.replace(/\[LOGO_URL\]/g, logo);
+    } else {
+      out = out
+        .replace(/<img[^>]*src="\[LOGO_URL\]"[^>]*>/gi, '<div style="font-family: sans-serif; font-weight: 700; font-size: 20px;">NexusTalent</div>')
+        .replace(/\[LOGO_URL\]/g, '');
+    }
+    const image1 = (assets.imageUrl1 || '').trim();
+    if (image1) {
+      out = out.replace(/\[IMAGE_URL_1\]/g, image1);
+    } else {
+      out = out.replace(/<img[^>]*src="\[IMAGE_URL_1\]"[^>]*>/gi, '').replace(/\[IMAGE_URL_1\]/g, '');
+    }
+    const image2 = (assets.imageUrl2 || '').trim();
+    if (image2) {
+      out = out.replace(/\[IMAGE_URL_2\]/g, image2);
+    } else {
+      out = out.replace(/<img[^>]*src="\[IMAGE_URL_2\]"[^>]*>/gi, '').replace(/\[IMAGE_URL_2\]/g, '');
+    }
+    return out;
+  };
 
 
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
     defaultValues: {
-      topic: "Lançamento de um novo curso de Liderança",
+      topic: "",
       tone: 'Profissional',
       language: 'Português',
       template: 'newsletter',
@@ -74,7 +96,7 @@ export default function EmailMarketingPage() {
       targetVacancies: [],
       functionalAreas: [],
       subject: '',
-      logoUrl: 'https://logospore.com/wp-content/uploads/2023/11/nexus-talent-logo.png',
+      logoUrl: '',
       imageUrl: '',
       imageUrl2: '',
       buttonText: "",
@@ -94,10 +116,25 @@ export default function EmailMarketingPage() {
   const watchFunctionalAreas = form.watch('functionalAreas');
 
   useEffect(() => {
-    setCourses(getCourses());
-    setVacancies(getVacancies(true));
-    const allAreas = [...new Set(allUsers.map(u => u.functionalArea).filter(Boolean))];
-    setFunctionalAreas(allAreas as string[]);
+    let active = true;
+    (async () => {
+      try {
+        const res = await fetch('/api/admin/metadata', { cache: 'no-store', credentials: 'include' });
+        const json = await res.json();
+        if (!res.ok || !json?.ok) throw new Error(json?.error || 'Falha ao carregar dados.');
+        if (!active) return;
+        setCourses(Array.isArray(json.courses) ? json.courses : []);
+        setVacancies(Array.isArray(json.vacancies) ? json.vacancies : []);
+        setFunctionalAreas(Array.isArray(json.functionalAreas) ? json.functionalAreas : []);
+      } catch (e: any) {
+        if (!active) return;
+        setCourses([]);
+        setVacancies([]);
+        setFunctionalAreas([]);
+        toast({ variant: 'destructive', title: 'Erro', description: e?.message || 'Falha ao carregar dados.' });
+      }
+    })();
+    return () => { active = false; };
   }, []);
 
   useEffect(() => {
@@ -106,33 +143,33 @@ export default function EmailMarketingPage() {
     const selectedVacancies = watchVacancies || [];
     const selectedAreas = watchFunctionalAreas || [];
 
-    const addedUsers = new Set<string>();
-
     if(selectedSegments.length === 0 && selectedCourses.length === 0 && selectedVacancies.length === 0 && selectedAreas.length === 0) {
         setAudienceCount(0);
         return;
     }
-
-    let filteredUsers = allUsers;
-
-    // Filter by segments
-    if (selectedSegments.length > 0) {
-        filteredUsers = filteredUsers.filter(u => selectedSegments.includes(u.userType));
-    }
-    
-    // Filter by functional areas
-    if (selectedAreas.length > 0) {
-        filteredUsers = filteredUsers.filter(u => u.functionalArea && selectedAreas.includes(u.functionalArea));
-    }
-    
-    // In a real app, course/vacancy enrollments would be checked. Here we just add all users for simplicity if any are selected.
-    if (selectedCourses.length > 0 || selectedVacancies.length > 0) {
-        allUsers.forEach(u => addedUsers.add(u.id));
-    }
-
-    filteredUsers.forEach(u => addedUsers.add(u.id));
-    
-    setAudienceCount(addedUsers.size);
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch('/api/admin/audience/count', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({
+            segments: selectedSegments,
+            targetCourses: selectedCourses,
+            targetVacancies: selectedVacancies,
+            functionalAreas: selectedAreas,
+          }),
+        });
+        const json = await res.json();
+        if (cancelled) return;
+        if (!res.ok || !json?.ok) throw new Error(json?.error || 'Falha ao calcular público.');
+        setAudienceCount(Number(json.count || 0));
+      } catch {
+        if (!cancelled) setAudienceCount(0);
+      }
+    })();
+    return () => { cancelled = true; };
 
   }, [watchSegments, watchCourses, watchVacancies, watchFunctionalAreas]);
 
@@ -140,13 +177,7 @@ export default function EmailMarketingPage() {
   // Effect to update the preview when image URLs change or generated content is set
   useEffect(() => {
     if (generatedContent) {
-      let updatedHtml = generatedContent.bodyHtml;
-      
-      updatedHtml = updatedHtml.replace(/\[LOGO_URL\]/g, logoUrl || 'https://logospore.com/wp-content/uploads/2023/11/nexus-talent-logo.png');
-      updatedHtml = updatedHtml.replace(/\[IMAGE_URL_1\]/g, imageUrl1 || 'https://placehold.co/600x300?text=Imagem+Principal');
-      updatedHtml = updatedHtml.replace(/\[IMAGE_URL_2\]/g, imageUrl2 || 'https://placehold.co/280x200?text=Imagem+Secundária');
-      
-      setCurrentBodyHtml(updatedHtml);
+      setCurrentBodyHtml(applyTemplateAssets(generatedContent.bodyHtml, { logoUrl, imageUrl1, imageUrl2 }));
     }
   }, [generatedContent, logoUrl, imageUrl1, imageUrl2]);
 
@@ -169,11 +200,13 @@ export default function EmailMarketingPage() {
       setGeneratedContent(result);
       
       // Update preview HTML after generation
-      let updatedHtml = result.bodyHtml
-        .replace(/\[LOGO_URL\]/g, form.getValues('logoUrl') || 'https://logospore.com/wp-content/uploads/2023/11/nexus-talent-logo.png')
-        .replace(/\[IMAGE_URL_1\]/g, form.getValues('imageUrl') || 'https://placehold.co/600x300?text=Imagem+Principal')
-        .replace(/\[IMAGE_URL_2\]/g, form.getValues('imageUrl2') || 'https://placehold.co/280x200?text=Imagem+Secundária');
-      setCurrentBodyHtml(updatedHtml);
+      setCurrentBodyHtml(
+        applyTemplateAssets(result.bodyHtml, {
+          logoUrl: form.getValues('logoUrl'),
+          imageUrl1: form.getValues('imageUrl'),
+          imageUrl2: form.getValues('imageUrl2'),
+        })
+      );
 
 
       form.setValue('subject', result.subject);
@@ -195,7 +228,7 @@ export default function EmailMarketingPage() {
     }
   };
 
-  const handleSendCampaign = () => {
+  const handleSendCampaign = async () => {
     if (!generatedContent) {
       toast({
         variant: 'destructive',
@@ -230,18 +263,22 @@ export default function EmailMarketingPage() {
       return;
     }
     setIsSending(true);
-    setTimeout(() => {
-      console.log('Email campaign sent (simulação):', {
-        subject,
-        toCount: audienceCount,
+    try {
+      const res = await fetch('/api/admin/email-campaigns', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ subject, bodyHtml: currentBodyHtml, audienceCount }),
       });
-      toast({
-        title: "Campanha Enviada! (Simulação)",
-        description: `O e-mail "${subject}" foi enviado para ${audienceCount} destinatários.`,
-      });
-      setIsSending(false);
+      const json = await res.json();
+      if (!res.ok || !json?.ok) throw new Error(json?.error || 'Falha ao registrar campanha.');
+      toast({ title: "Campanha Enviada!", description: `Campanha registrada para ${audienceCount} destinatários.` });
       router.push('/dashboard/admin/campaigns');
-    }, 1500);
+    } catch (e: any) {
+      toast({ variant: 'destructive', title: 'Erro ao enviar', description: e?.message || 'Falha ao enviar campanha.' });
+    } finally {
+      setIsSending(false);
+    }
   };
   
   const selectedTemplate = templates.find(t => t.id === selectedTemplateId);

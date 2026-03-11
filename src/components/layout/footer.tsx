@@ -7,8 +7,6 @@ import Link from 'next/link';
 const footerLinks = {
   jobs: [
     { href: "/recruitment", label: "Todos os empregos" },
-    { href: "#", label: "Empregos em destaque" },
-    { href: "#", label: "Candidatura espontânea" },
   ],
   paraTalentos: [
     { href: "/courses", label: "Cursos de Formação" },
@@ -17,18 +15,11 @@ const footerLinks = {
     { href: "/cv-builder", label: "Construtor de CV" },
   ],
   paraEmpresas: [
-    { href: "#", label: "Trabalho temporário" },
     { href: "/recruitment", label: "Recrutamento e seleção" },
-    { href: "#", label: "Outsourcing" },
-    { href: "#", label: "Assessment & development" },
-    { href: "#", label: "Pedido de proposta" },
   ],
   sobreNos: [
     { href: "/about", label: "Quem somos" },
-    { href: "#", label: "Sustentabilidade" },
     { href: "/blog", label: "Notícias" },
-    { href: "#", label: "Onde estamos" },
-    { href: "#", label: "Contactos" },
   ],
   galeria: [
       { href: "/gallery", label: "Galeria de Fotos" },
@@ -48,11 +39,6 @@ export function Footer() {
             <p className="text-muted-foreground text-sm">
               Capacitando talentos e conectando oportunidades para um futuro brilhante.
             </p>
-            <div className="flex space-x-4">
-              <Link href="#" className="text-muted-foreground hover:text-primary"><Facebook size={20} /></Link>
-              <Link href="#" className="text-muted-foreground hover:text-primary"><Twitter size={20} /></Link>
-              <Link href="#" className="text-muted-foreground hover:text-primary"><Linkedin size={20} /></Link>
-            </div>
           </div>
 
           <div className='col-span-1 md:col-span-3 lg:col-span-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-8'>

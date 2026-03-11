@@ -17,38 +17,13 @@ import { useState, useEffect } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Separator } from "@/components/ui/separator";
-import { supabase } from "@/lib/supabase/client";
 import { GeneralReport } from "@/components/admin/general-report";
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
 import { BarChart, Bar, ResponsiveContainer, XAxis, YAxis } from "recharts";
-import type { UserProfile, Course, CourseStatus } from "@/lib/types";
-import { users as mockAllUsers } from "@/lib/users";
-import { getImages } from '@/lib/site-data';
+import type { CourseStatus } from "@/lib/types";
+import { getImages, type ImagePlaceholder } from '@/lib/site-data';
 import Image from "next/image";
 
-
-// Mock data
-const managedCoursesData = [
-    { id: 'TA-001', name: 'Técnicas de Apresentação', students: 25, averageGrade: 88, status: 'Ativo', engagement: 85 },
-    { id: 'GC-002', name: 'Gestão de Conflitos', students: 18, averageGrade: 91, status: 'Ativo', engagement: 92 },
-    { id: 'EN-427', name: 'Excel Avançado', students: 32, averageGrade: null, status: 'Rascunho', engagement: 0 },
-];
-
-const mockActivityFeed = [
-    { id: 1, type: 'enrollment', text: 'Ana Pereira inscreveu-se em "Técnicas de Apresentação".', time: '2h atrás' },
-    { id: 2, type: 'submission', text: 'Carlos Martins submeteu o trabalho do Módulo 2.', time: '5h atrás' },
-    { id: 3, type: 'forum', text: 'Nova pergunta de Sofia Nunes no fórum de "Gestão de Conflitos".', time: '1 dia atrás' },
-    { id: 4, type: 'enrollment', text: 'Diogo Alves inscreveu-se em "Gestão de Conflitos".', time: '2 dias atrás' },
-];
-
-const mockTopStudents = [
-    { id: 'student5', name: 'Elisa Fernandes', course: 'Gestão de Conflitos', grade: 95 },
-    { id: 'student3', name: 'Carla Santos', course: 'Técnicas de Apresentação', grade: 92 },
-];
-
-const mockAtRiskStudents = [
-    { id: 'student1', name: 'Ana Pereira', course: 'Técnicas de Apresentação', engagement: 'Baixo (25%)' },
-]
 
 const KpiCard = ({ title, value, icon: Icon }: { title: string, value: string, icon: React.ElementType }) => (
     <Card>
@@ -78,74 +53,95 @@ const statusVariantMap: Record<CourseStatus, 'default' | 'secondary' | 'destruct
 
 export function InstructorDashboard() {
     const [reportData, setReportData] = useState<any>(null);
-    const [managedCourses, setManagedCourses] = useState<Course[]>([]);
+    const [isLoading, setIsLoading] = useState(true);
+    const [kpis, setKpis] = useState<{ activeStudents: number; publishedCourses: number; pendingCourses: number; avgCompletionRate: number | null; avgRating: number | null }>({
+        activeStudents: 0,
+        publishedCourses: 0,
+        pendingCourses: 0,
+        avgCompletionRate: null,
+        avgRating: null,
+    });
+    const [managedCourses, setManagedCourses] = useState<Array<{ id: string; name: string; status: CourseStatus; imageId?: string | null; imageDataUri?: string | null }>>([]);
+    const [courseSummary, setCourseSummary] = useState<Array<{ courseId: string; students: number; averageGrade: number | null; engagement: number }>>([]);
+    const [engagementByCourse, setEngagementByCourse] = useState<Array<{ name: string; engaged: number }>>([]);
+    const [activity, setActivity] = useState<Array<{ id: string; type: string; text: string; time: string }>>([]);
+    const [topStudents, setTopStudents] = useState<Array<{ id: string; name: string; course: string; grade: number }>>([]);
+    const [atRiskStudents, setAtRiskStudents] = useState<Array<{ id: string; name: string; course: string; engagement: string }>>([]);
+    const [allImages, setAllImages] = useState<ImagePlaceholder[]>([]);
+    const { toast } = useToast();
 
     useEffect(() => {
         let active = true;
         (async () => {
             try {
-                const sessionResponse = await fetch('/api/auth/session');
-                const sessionJson = await sessionResponse.json();
-                const userId = sessionJson?.ok ? sessionJson?.user?.id : null;
-                if (!userId) {
-                    if (active) setManagedCourses([]);
-                    return;
-                }
-                const { data, error } = await supabase.from('courses').select('*').eq('owner_id', userId);
-                if (error) throw error;
-                const rows = Array.isArray(data) ? data : [];
-                const mapped: Course[] = rows.map((row: any) => ({
-                    id: String(row.id ?? row.code ?? crypto.randomUUID()),
-                    name: row.name ?? row.title ?? 'Curso',
-                    category: row.category ?? 'geral',
-                    imageId: row.image_id ?? row.imageId ?? 'course-power-bi',
-                    imageDataUri: row.image_data_uri ?? row.imageDataUri,
-                    duration: row.duration ?? '—',
-                    format: (row.format ?? 'Online') as Course['format'],
-                    generalObjective: row.general_objective ?? row.generalObjective ?? '',
-                    whatYouWillLearn: Array.isArray(row.what_you_will_learn)
-                        ? row.what_you_will_learn
-                        : Array.isArray(row.whatYouWillLearn)
-                        ? row.whatYouWillLearn
-                        : [],
-                    modules: Array.isArray(row.modules) ? row.modules : [],
-                    status: (row.status ?? 'Ativo') as Course['status'],
-                }));
-                if (active) setManagedCourses(mapped);
-            } catch {
-                if (active) setManagedCourses([]);
+                const res = await fetch('/api/instructor/dashboard', { cache: 'no-store', credentials: 'include' });
+                const json = await res.json();
+                if (!res.ok || !json?.ok) throw new Error(json?.error || 'Falha ao carregar painel.');
+                if (!active) return;
+                setKpis({
+                    activeStudents: Number(json.kpis?.activeStudents || 0),
+                    publishedCourses: Number(json.kpis?.publishedCourses || 0),
+                    pendingCourses: Number(json.kpis?.pendingCourses || 0),
+                    avgCompletionRate: json.kpis?.avgCompletionRate !== null && json.kpis?.avgCompletionRate !== undefined ? Number(json.kpis.avgCompletionRate) : null,
+                    avgRating: json.kpis?.avgRating !== null && json.kpis?.avgRating !== undefined ? Number(json.kpis.avgRating) : null,
+                });
+                setManagedCourses(Array.isArray(json.managedCourses) ? json.managedCourses : []);
+                setCourseSummary(Array.isArray(json.courseSummary) ? json.courseSummary : []);
+                setEngagementByCourse(Array.isArray(json.engagementByCourse) ? json.engagementByCourse : []);
+                setActivity(Array.isArray(json.activity) ? json.activity : []);
+                setTopStudents(Array.isArray(json.topStudents) ? json.topStudents : []);
+                setAtRiskStudents(Array.isArray(json.atRiskStudents) ? json.atRiskStudents : []);
+            } catch (e: any) {
+                if (!active) return;
+                toast({ variant: 'destructive', title: 'Erro', description: e?.message || 'Falha ao carregar painel.' });
+                setKpis({ activeStudents: 0, publishedCourses: 0, pendingCourses: 0, avgCompletionRate: null, avgRating: null });
+                setManagedCourses([]);
+                setCourseSummary([]);
+                setEngagementByCourse([]);
+                setActivity([]);
+                setTopStudents([]);
+                setAtRiskStudents([]);
+            } finally {
+                if (active) setIsLoading(false);
             }
         })();
         return () => { active = false };
     }, []);
 
     const handleGenerateReport = () => {
-        const studentEngagementByCourse = managedCoursesData.map(c => ({
-            name: c.name,
-            engaged: c.engagement,
-        }));
-
         setReportData({
             instructorKpis: {
-                activeStudents: managedCoursesData.reduce((sum, c) => sum + c.students, 0),
-                publishedCourses: managedCoursesData.filter(c => c.status === 'Ativo').length,
-                avgCompletionRate: 85, // Mock data
-                avgRating: 4.7, // Mock data
+                activeStudents: kpis.activeStudents,
+                publishedCourses: kpis.publishedCourses,
+                avgCompletionRate: kpis.avgCompletionRate ?? 0,
+                avgRating: kpis.avgRating ?? 0,
             },
-            studentEngagementByCourse,
+            studentEngagementByCourse: engagementByCourse,
         });
     }
     
     const activityIcon = (type: string) => {
         switch (type) {
             case 'enrollment': return <UserCheck className="h-4 w-4 text-blue-500" />;
-            case 'submission': return <FileUp className="h-4 w-4 text-green-500" />;
-            case 'forum': return <MessageSquare className="h-4 w-4 text-orange-500" />;
+            case 'progress': return <Activity className="h-4 w-4 text-green-500" />;
+            case 'grade': return <Award className="h-4 w-4 text-orange-500" />;
             default: return <Activity className="h-4 w-4 text-gray-500" />;
         }
     }
     
-    const allImages = getImages();
+    useEffect(() => {
+        let active = true;
+        (async () => {
+            try {
+                const images = await getImages();
+                if (active) setAllImages(images);
+            } catch {
+                if (active) setAllImages([]);
+            }
+        })();
+        return () => { active = false; };
+    }, []);
+    const summaryById = new Map(courseSummary.map((c) => [c.courseId, c]));
 
 
     return (
@@ -157,10 +153,10 @@ export function InstructorDashboard() {
 
             <div className="space-y-8">
                 <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-                    <KpiCard title="Alunos Ativos" value="75" icon={Users} />
-                    <KpiCard title="Cursos Publicados" value={managedCourses.filter(c => c.status === 'Ativo').length.toString()} icon={BookOpen} />
-                    <KpiCard title="Cursos Pendentes" value={managedCourses.filter(c => c.status === 'Pendente').length.toString()} icon={Activity} />
-                    <KpiCard title="Avaliação Média" value="4.7" icon={Star} />
+                    <KpiCard title="Alunos Ativos" value={isLoading ? '—' : String(kpis.activeStudents)} icon={Users} />
+                    <KpiCard title="Cursos Publicados" value={isLoading ? '—' : String(kpis.publishedCourses)} icon={BookOpen} />
+                    <KpiCard title="Cursos Pendentes" value={isLoading ? '—' : String(kpis.pendingCourses)} icon={Activity} />
+                    <KpiCard title="Avaliação Média" value={isLoading ? '—' : (kpis.avgRating === null ? '—' : String(kpis.avgRating))} icon={Star} />
                 </div>
 
                 <div className="grid lg:grid-cols-3 gap-8">
@@ -171,11 +167,11 @@ export function InstructorDashboard() {
                             </CardHeader>
                             <CardContent>
                                 <ChartContainer config={chartConfig} className="h-64">
-                                    <BarChart accessibilityLayer data={managedCoursesData}>
+                                    <BarChart accessibilityLayer data={engagementByCourse}>
                                         <XAxis dataKey="name" tickLine={false} tickMargin={10} axisLine={false} fontSize={12} interval={0} />
                                         <YAxis />
                                         <ChartTooltip content={<ChartTooltipContent />} />
-                                        <Bar dataKey="engagement" fill="var(--color-engaged)" radius={4} name="Engajamento"/>
+                                        <Bar dataKey="engaged" fill="var(--color-engaged)" radius={4} name="Engajamento"/>
                                     </BarChart>
                                 </ChartContainer>
                             </CardContent>
@@ -198,7 +194,7 @@ export function InstructorDashboard() {
                                     {managedCourses.map(course => {
                                         const image = allImages.find(p => p.id === course.imageId);
                                         const imageSrc = course.imageDataUri || image?.imageUrl;
-                                        const courseMockData = managedCoursesData.find(c => c.id === course.id);
+                                        const s = summaryById.get(course.id);
 
                                         return (
                                             <Card key={course.id} className="p-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 hover:bg-secondary/50 transition-colors">
@@ -211,8 +207,8 @@ export function InstructorDashboard() {
                                                     <div>
                                                         <h4 className="font-semibold">{course.name} <Badge variant={statusVariantMap[course.status]}>{course.status}</Badge></h4>
                                                         <p className="text-sm text-muted-foreground flex items-center gap-4 mt-1">
-                                                            <span className="flex items-center gap-1"><Users size={14} /> {courseMockData?.students || 0} alunos</span>
-                                                            {courseMockData?.averageGrade && <span className="flex items-center gap-1"><Award size={14} /> Média de {courseMockData.averageGrade}%</span>}
+                                                            <span className="flex items-center gap-1"><Users size={14} /> {s?.students ?? 0} alunos</span>
+                                                            {s?.averageGrade !== null && s?.averageGrade !== undefined && <span className="flex items-center gap-1"><Award size={14} /> Média de {s.averageGrade}%</span>}
                                                         </p>
                                                     </div>
                                                 </div>
@@ -240,7 +236,9 @@ export function InstructorDashboard() {
                             </CardHeader>
                             <CardContent>
                                 <div className="space-y-4">
-                                    {mockActivityFeed.map(item => (
+                                    {activity.length === 0 ? (
+                                        <div className="text-sm text-muted-foreground">Sem atividade recente.</div>
+                                    ) : activity.map(item => (
                                         <div key={item.id} className="flex items-start gap-3">
                                             <div className="flex-shrink-0 mt-1">{activityIcon(item.type)}</div>
                                             <div>
@@ -264,7 +262,9 @@ export function InstructorDashboard() {
                                 <div>
                                     <h4 className="font-semibold text-sm flex items-center gap-2 mb-2"><UserCheck className="text-green-500" /> Melhor Desempenho</h4>
                                     <div className="space-y-2">
-                                        {mockTopStudents.map(student => (
+                                        {topStudents.length === 0 ? (
+                                            <div className="text-xs text-muted-foreground">Sem dados suficientes.</div>
+                                        ) : topStudents.map(student => (
                                             <div key={student.id} className="flex items-center justify-between text-xs p-2 rounded-md bg-secondary">
                                                 <span>{student.name}</span>
                                                 <span className="font-bold">{student.grade}%</span>
@@ -276,7 +276,9 @@ export function InstructorDashboard() {
                                  <div>
                                     <h4 className="font-semibold text-sm flex items-center gap-2 mb-2"><UserX className="text-red-500" /> Em Risco</h4>
                                     <div className="space-y-2">
-                                        {mockAtRiskStudents.map(student => (
+                                        {atRiskStudents.length === 0 ? (
+                                            <div className="text-xs text-muted-foreground">Sem alunos em risco.</div>
+                                        ) : atRiskStudents.map(student => (
                                             <div key={student.id} className="flex items-center justify-between text-xs p-2 rounded-md bg-secondary">
                                                 <span>{student.name}</span>
                                                 <Badge variant="destructive">{student.engagement}</Badge>
@@ -302,14 +304,16 @@ export function InstructorDashboard() {
                                             <FileDown className="mr-2 h-4 w-4" /> Gerar Relatório
                                         </Button>
                                     </DialogTrigger>
-                                    <DialogContent className="max-w-4xl max-h-[90vh]">
+                                    <DialogContent className="max-w-4xl h-[90vh] flex flex-col overflow-hidden">
                                         <DialogHeader>
                                             <DialogTitle>Relatório de Desempenho do Formador</DialogTitle>
                                             <DialogDescription>
                                                 Visão geral da sua atividade na plataforma NexusTalent.
                                             </DialogDescription>
                                         </DialogHeader>
-                                        {reportData && <GeneralReport data={reportData} reportType="instructor" />}
+                                        <div className="flex-1 min-h-0">
+                                            {reportData && <GeneralReport data={reportData} reportType="instructor" />}
+                                        </div>
                                     </DialogContent>
                                 </Dialog>
                             </CardContent>

@@ -7,22 +7,38 @@
  * - personalizedCourseRecommendations - A function that returns personalized course recommendations.
  */
 
-import {ai} from '@/ai/genkit';
+import { getAi } from '@/ai/genkit';
 import {z} from 'genkit';
 import { PersonalizedCourseRecommendationsInputSchema, PersonalizedCourseRecommendationsOutputSchema, type PersonalizedCourseRecommendationsInput, type PersonalizedCourseRecommendationsOutput } from '@/lib/schemas';
 
 
 export async function personalizedCourseRecommendations(
-  input: PersonalizedCourseRecommendationsInput
+  input: PersonalizedCourseRecommendationsInput,
+  apiKey?: string | null
 ): Promise<PersonalizedCourseRecommendationsOutput> {
-  return personalizedCourseRecommendationsFlow(input);
+  return getRuntime(apiKey).personalizedCourseRecommendationsFlow(input);
 }
 
-const prompt = ai.definePrompt({
-  name: 'personalizedCourseRecommendationsPrompt',
-  input: {schema: PersonalizedCourseRecommendationsInputSchema},
-  output: {schema: PersonalizedCourseRecommendationsOutputSchema},
-  prompt: `You are an expert career advisor and AI assistant for an educational platform called NexusTalent. Your goal is to create a personalized learning plan for users.
+type Runtime = {
+  personalizedCourseRecommendationsFlow: (input: PersonalizedCourseRecommendationsInput) => Promise<PersonalizedCourseRecommendationsOutput>;
+};
+
+const runtimeCache = new Map<string, Runtime>();
+
+function getRuntime(apiKey?: string | null): Runtime {
+  const key = typeof apiKey === 'string' ? apiKey.trim() : '';
+  if (!key) throw new Error('IA não configurada.');
+  const cacheKey = key;
+  const existing = runtimeCache.get(cacheKey);
+  if (existing) return existing;
+
+  const ai = getAi(key);
+
+  const prompt = ai.definePrompt({
+    name: 'personalizedCourseRecommendationsPrompt',
+    input: {schema: PersonalizedCourseRecommendationsInputSchema},
+    output: {schema: PersonalizedCourseRecommendationsOutputSchema},
+    prompt: `You are an expert career advisor and AI assistant for an educational platform called NexusTalent. Your goal is to create a personalized learning plan for users.
 
 User Profile & Goals:
 "{{{userProfile}}}"
@@ -35,16 +51,22 @@ Based on the user's profile and the available courses, generate a structured lea
 2.  A list of 2 to 4 recommended courses FROM THE PROVIDED CATALOG. For each course, provide the course name and a concise reason explaining why it is a good fit for the user's goals.
 3.  A brief summary of the expected outcomes and benefits for the user after completing the recommended courses (summary).
 `,
-});
-
-const personalizedCourseRecommendationsFlow = ai.defineFlow(
-  {
-    name: 'personalizedCourseRecommendationsFlow',
-    inputSchema: PersonalizedCourseRecommendationsInputSchema,
-    outputSchema: PersonalizedCourseRecommendationsOutputSchema,
   },
-  async input => {
-    const {output} = await prompt(input);
-    return output!;
-  }
-);
+  );
+
+  const personalizedCourseRecommendationsFlow = ai.defineFlow(
+    {
+      name: 'personalizedCourseRecommendationsFlow',
+      inputSchema: PersonalizedCourseRecommendationsInputSchema,
+      outputSchema: PersonalizedCourseRecommendationsOutputSchema,
+    },
+    async input => {
+      const {output} = await prompt(input);
+      return output!;
+    }
+  );
+
+  const runtime = { personalizedCourseRecommendationsFlow };
+  runtimeCache.set(cacheKey, runtime);
+  return runtime;
+}

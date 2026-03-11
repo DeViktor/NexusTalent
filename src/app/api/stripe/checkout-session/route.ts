@@ -1,12 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { stripe } from '@/lib/stripe';
-import process from 'process';
 
 export async function POST(req: NextRequest) {
   try {
-    if (!process.env.STRIPE_SECRET_KEY) {
-      return NextResponse.json({ error: 'Stripe não configurado. Defina STRIPE_SECRET_KEY nas variáveis de ambiente.' }, { status: 503 });
-    }
     const body = await req.json();
     const { items, mode, success_url, cancel_url, customer_email, metadata } = body;
 

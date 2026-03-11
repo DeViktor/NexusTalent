@@ -4,7 +4,7 @@
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { BookOpen, FileWarning, PlusCircle, ArrowLeft, Search, FileDown } from 'lucide-react';
+import { BookOpen, FileWarning, PlusCircle, ArrowLeft, Search, FileDown, Loader2 } from 'lucide-react';
 import type { Course, CourseCategory } from '@/lib/types';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
@@ -17,6 +17,18 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useToast } from '@/hooks/use-toast';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { GeneralReport } from "@/components/admin/general-report";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
+import { deleteCourseAction } from '@/app/actions';
 
 
 export default function ManageCoursesPage() {
@@ -29,6 +41,7 @@ export default function ManageCoursesPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [reportData, setReportData] = useState<any>(null);
+  const [deletingCourseId, setDeletingCourseId] = useState<string | null>(null);
 
 
   useEffect(() => {
@@ -57,9 +70,10 @@ export default function ManageCoursesPage() {
           modules: Array.isArray(row.modules) ? row.modules : [],
           status: (row.status ?? 'Ativo') as Course['status'],
         } as Course));
+        const cats = await getCourseCategories();
         if (active) {
           setCourses(mapped);
-          setCategories(getCourseCategories());
+          setCategories(Array.isArray(cats) ? cats : []);
         }
       } catch (e) {
         if (e instanceof Error) {
@@ -83,10 +97,28 @@ export default function ManageCoursesPage() {
   }, [courses, searchTerm, selectedCategory]);
 
   const handleExportXLS = () => {
-    toast({
-      title: 'Relatório Gerado (Simulação)',
-      description: 'O seu relatório de cursos em formato XLS foi descarregado.',
-    });
+    const header = ['ID', 'Nome', 'Categoria', 'Formato', 'Status'];
+    const rows = courses.map((c) => [
+      c.id,
+      c.name,
+      categories.find((x) => x.id === c.category)?.name || c.category,
+      c.format,
+      c.status,
+    ]);
+    const table = [header, ...rows]
+      .map((r) => `<tr>${r.map((cell) => `<td>${String(cell).replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')}</td>`).join('')}</tr>`)
+      .join('');
+    const html = `<!doctype html><html><head><meta charset="utf-8" /></head><body><table>${table}</table></body></html>`;
+    const blob = new Blob([html], { type: 'application/vnd.ms-excel;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `cursos-${new Date().toISOString().slice(0, 10)}.xls`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    toast({ title: 'Exportação concluída', description: 'Relatório de cursos exportado.' });
   }
 
   const handleGenerateReport = () => {
@@ -100,6 +132,20 @@ export default function ManageCoursesPage() {
       coursesByCategory: courseData
     });
   }
+
+  const handleDeleteCourse = async (courseId: string) => {
+    setDeletingCourseId(courseId);
+    try {
+      const res = await deleteCourseAction(courseId);
+      if (!res?.success) throw new Error(res?.message || 'Falha ao excluir curso.');
+      setCourses((prev) => prev.filter((c) => c.id !== courseId));
+      toast({ title: 'Sucesso', description: res.message });
+    } catch (e: any) {
+      toast({ variant: 'destructive', title: 'Erro', description: e?.message || 'Falha ao excluir curso.' });
+    } finally {
+      setDeletingCourseId(null);
+    }
+  };
 
   const renderContent = () => {
     if (isLoading) {
@@ -157,10 +203,32 @@ export default function ManageCoursesPage() {
                         <p className="text-sm text-muted-foreground mt-2 line-clamp-3">{course.generalObjective}</p>
                         <div className='mt-4 flex gap-2'>
                             <Button variant="outline" size="sm" asChild>
-                                <Link href={`/courses/${course.id}`}>Ver</Link>
+                                <Link href={`/dashboard/courses/${course.id}`}>Ver</Link>
                             </Button>
-                            <Button variant="outline" size="sm" disabled>Editar</Button>
-                            <Button variant="destructive" size="sm" disabled>Excluir</Button>
+                            <Button variant="outline" size="sm" asChild>
+                                <Link href={`/dashboard/courses/edit/${course.id}`}>Editar</Link>
+                            </Button>
+                            <AlertDialog>
+                              <AlertDialogTrigger asChild>
+                                <Button variant="destructive" size="sm" disabled={deletingCourseId === course.id}>
+                                  {deletingCourseId === course.id ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Excluir'}
+                                </Button>
+                              </AlertDialogTrigger>
+                              <AlertDialogContent>
+                                <AlertDialogHeader>
+                                  <AlertDialogTitle>Excluir curso</AlertDialogTitle>
+                                  <AlertDialogDescription>
+                                    Essa ação não pode ser desfeita. Deseja excluir o curso "{course.name}"?
+                                  </AlertDialogDescription>
+                                </AlertDialogHeader>
+                                <AlertDialogFooter>
+                                  <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                                  <AlertDialogAction onClick={() => handleDeleteCourse(course.id)}>
+                                    Confirmar
+                                  </AlertDialogAction>
+                                </AlertDialogFooter>
+                              </AlertDialogContent>
+                            </AlertDialog>
                         </div>
                     </CardContent>
                 </Card>
@@ -190,14 +258,16 @@ export default function ManageCoursesPage() {
                     <DialogTrigger asChild>
                         <Button variant="default" onClick={handleGenerateReport}>Gerar Relatório PDF</Button>
                     </DialogTrigger>
-                    <DialogContent className="max-w-4xl h-[90vh]">
+                    <DialogContent className="max-w-4xl h-[90vh] flex flex-col overflow-hidden">
                         <DialogHeader>
                             <DialogTitle>Relatório de Cursos</DialogTitle>
                             <DialogDescription>
                                 Visão geral dos cursos na plataforma.
                             </DialogDescription>
                         </DialogHeader>
-                        {reportData && <GeneralReport data={reportData} reportType="courses" />}
+                        <div className="flex-1 min-h-0">
+                            {reportData && <GeneralReport data={reportData} reportType="courses" />}
+                        </div>
                     </DialogContent>
                 </Dialog>
                 <Button asChild className='w-full md:w-auto'>

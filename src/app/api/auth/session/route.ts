@@ -13,12 +13,12 @@ export async function GET(req: Request) {
       ?.split('=')[1];
 
     if (!appSession) {
-      return NextResponse.json({ ok: false, error: 'Sem sessão' }, { status: 401 });
+      return NextResponse.json({ ok: false, error: 'Sem sessão' });
     }
 
     const payload = await verifySession(appSession);
     if (!payload) {
-      return NextResponse.json({ ok: false, error: 'Sessão inválida' }, { status: 401 });
+      return NextResponse.json({ ok: false, error: 'Sessão inválida' });
     }
 
     const admin = getServerSupabase();
@@ -34,7 +34,18 @@ export async function GET(req: Request) {
     const lastName = (profile as any)?.last_name || '';
     const fullName = `${firstName} ${lastName}`.trim() || null;
     const photoURL = (profile as any)?.profile_picture_url || null;
-    const role = ((payload.role ?? (profile as any)?.role ?? (profile as any)?.user_type) as string | undefined) || undefined;
+    const profileRole = ((profile as any)?.role as string | null | undefined) ?? undefined;
+    const profileUserType = ((profile as any)?.user_type as string | null | undefined) ?? undefined;
+    const rawRole =
+      profileUserType && (profileRole === undefined || profileRole === null || profileRole === 'student')
+        ? profileUserType
+        : (profileRole ?? profileUserType ?? payload.role);
+    const normalizedRole =
+      rawRole === 'Aluno' ? 'student' :
+      rawRole === 'Instrutor' ? 'instructor' :
+      rawRole === 'Empresa' ? 'recruiter' :
+      rawRole;
+    const role = normalizedRole || undefined;
 
     const user = {
       id: payload.userId,

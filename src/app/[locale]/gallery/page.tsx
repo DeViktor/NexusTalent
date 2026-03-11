@@ -16,9 +16,17 @@ export default function GalleryPage() {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    const galleryImages = getImages().filter(p => p.id.startsWith('gallery-'));
-    setImages(galleryImages);
-    setIsLoading(false);
+    let active = true;
+    (async () => {
+      try {
+        const all = await getImages();
+        const galleryImages = all.filter(p => p.id.startsWith('gallery-'));
+        if (active) setImages(galleryImages);
+      } finally {
+        if (active) setIsLoading(false);
+      }
+    })();
+    return () => { active = false; };
   }, []);
 
   return (

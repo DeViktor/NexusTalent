@@ -13,23 +13,25 @@ import { useRouter } from "next/navigation";
 import { useToast } from "@/hooks/use-toast";
 import { format } from 'date-fns';
 import { pt } from 'date-fns/locale';
+import { useEffect } from 'react';
+import { Skeleton } from '@/components/ui/skeleton';
 
-// Mock data for subscriptions
-const mockSubscriptions = [
-    { id: 'sub1', userName: 'Ana Pereira', userEmail: 'ana.pereira@email.com', plan: 'Pro Anual', status: 'Ativo', nextBilling: new Date(2025, 6, 28) },
-    { id: 'sub2', userName: 'Bruno Costa', userEmail: 'bruno.costa@email.com', plan: 'Pro Mensal', status: 'Ativo', nextBilling: new Date(2024, 8, 15) },
-    { id: 'sub3', userName: 'Carla Santos', userEmail: 'carla.santos@email.com', plan: 'Básico Anual', status: 'Cancelado', nextBilling: null },
-    { id: 'sub4', userName: 'Diogo Alves', userEmail: 'diogo.alves@email.com', plan: 'Básico Mensal', status: 'Ativo', nextBilling: new Date(2024, 8, 22) },
-    { id: 'sub5', userName: 'Elisa Fernandes', userEmail: 'elisa.f@email.com', plan: 'Pro Anual', status: 'Pendente', nextBilling: new Date(2024, 8, 1) },
-];
-
-type Subscription = typeof mockSubscriptions[0];
+type Subscription = {
+  id: string;
+  userId: string;
+  userName: string;
+  userEmail: string;
+  plan: string;
+  status: string;
+  nextBilling: string | null;
+};
 
 export default function SubscriptionsPage() {
     const router = useRouter();
     const { toast } = useToast();
     const [searchTerm, setSearchTerm] = useState('');
-    const [subscriptions, setSubscriptions] = useState(mockSubscriptions);
+    const [subscriptions, setSubscriptions] = useState<Subscription[]>([]);
+    const [isLoading, setIsLoading] = useState(true);
 
     const filteredSubscriptions = useMemo(() => {
         if (!searchTerm) return subscriptions;
@@ -40,15 +42,41 @@ export default function SubscriptionsPage() {
         );
     }, [subscriptions, searchTerm]);
 
+    useEffect(() => {
+        let active = true;
+        (async () => {
+            try {
+                const res = await fetch('/api/admin/financials/subscriptions?limit=200', { cache: 'no-store' });
+                const payload = await res.json();
+                if (!active) return;
+                if (!res.ok || !payload?.ok) {
+                    throw new Error(payload?.error || 'Falha ao carregar subscrições');
+                }
+                setSubscriptions(payload.data as Subscription[]);
+            } catch (e: any) {
+                if (!active) return;
+                toast({ variant: 'destructive', title: 'Erro ao carregar', description: e?.message || 'Não foi possível carregar subscrições.' });
+                setSubscriptions([]);
+            } finally {
+                if (active) setIsLoading(false);
+            }
+        })();
+        return () => { active = false; };
+    }, [toast]);
+    
     const handleCancelSubscription = (subId: string) => {
-        setSubscriptions(prev => prev.map(s => s.id === subId ? { ...s, status: 'Cancelado' } : s));
-        toast({ title: "Subscrição Cancelada (Simulado)", description: "A subscrição do utilizador foi cancelada." });
+        toast({ title: "Ação indisponível", description: "Cancelamento real depende do Stripe Billing (a implementar)." });
     };
     
     const statusVariantMap: Record<string, 'default' | 'secondary' | 'destructive' | 'outline'> = {
-        'Ativo': 'default',
-        'Cancelado': 'destructive',
-        'Pendente': 'secondary',
+        'active': 'default',
+        'trialing': 'secondary',
+        'past_due': 'secondary',
+        'canceled': 'destructive',
+        'unpaid': 'destructive',
+        'incomplete': 'secondary',
+        'incomplete_expired': 'destructive',
+        'paused': 'outline',
     };
 
     return (
@@ -78,54 +106,65 @@ export default function SubscriptionsPage() {
                     </div>
                 </CardHeader>
                 <CardContent>
-                    <Table>
-                        <TableHeader>
-                            <TableRow>
-                                <TableHead>Utilizador</TableHead>
-                                <TableHead>Plano</TableHead>
-                                <TableHead>Status</TableHead>
-                                <TableHead>Próxima Faturação</TableHead>
-                                <TableHead className="text-right">Ações</TableHead>
-                            </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                            {filteredSubscriptions.map((sub) => (
-                                <TableRow key={sub.id}>
-                                    <TableCell>
-                                        <div className="font-medium">{sub.userName}</div>
-                                        <div className="text-sm text-muted-foreground">{sub.userEmail}</div>
-                                    </TableCell>
-                                    <TableCell>{sub.plan}</TableCell>
-                                    <TableCell>
-                                        <Badge variant={statusVariantMap[sub.status] || 'outline'}>
-                                            {sub.status}
-                                        </Badge>
-                                    </TableCell>
-                                    <TableCell>
-                                        {sub.nextBilling ? format(sub.nextBilling, 'd MMM, yyyy', { locale: pt }) : 'N/A'}
-                                    </TableCell>
-                                    <TableCell className="text-right">
-                                         <DropdownMenu>
-                                            <DropdownMenuTrigger asChild>
-                                            <Button variant="ghost" className="h-8 w-8 p-0">
-                                                <MoreHorizontal className="h-4 w-4" />
-                                            </Button>
-                                            </DropdownMenuTrigger>
-                                            <DropdownMenuContent align="end">
-                                                <DropdownMenuItem>Ver Detalhes</DropdownMenuItem>
-                                                <DropdownMenuItem>Alterar Plano</DropdownMenuItem>
-                                                {sub.status === 'Ativo' && (
-                                                    <DropdownMenuItem className="text-destructive" onClick={() => handleCancelSubscription(sub.id)}>
-                                                        Cancelar Subscrição
-                                                    </DropdownMenuItem>
-                                                )}
-                                            </DropdownMenuContent>
-                                        </DropdownMenu>
-                                    </TableCell>
+                    <div className="overflow-x-auto">
+                        {isLoading ? (
+                            <div className="space-y-3">
+                                <Skeleton className="h-10 w-full" />
+                                <Skeleton className="h-10 w-full" />
+                                <Skeleton className="h-10 w-full" />
+                                <Skeleton className="h-10 w-full" />
+                            </div>
+                        ) : (
+                        <Table>
+                            <TableHeader>
+                                <TableRow>
+                                    <TableHead>Utilizador</TableHead>
+                                    <TableHead>Plano</TableHead>
+                                    <TableHead>Status</TableHead>
+                                    <TableHead>Próxima Faturação</TableHead>
+                                    <TableHead className="text-right">Ações</TableHead>
                                 </TableRow>
-                            ))}
-                        </TableBody>
-                    </Table>
+                            </TableHeader>
+                            <TableBody>
+                                {filteredSubscriptions.map((sub) => (
+                                    <TableRow key={sub.id}>
+                                        <TableCell>
+                                            <div className="font-medium">{sub.userName}</div>
+                                            <div className="text-sm text-muted-foreground">{sub.userEmail}</div>
+                                        </TableCell>
+                                        <TableCell>{sub.plan}</TableCell>
+                                        <TableCell>
+                                            <Badge variant={statusVariantMap[sub.status] || 'outline'}>
+                                                {sub.status}
+                                            </Badge>
+                                        </TableCell>
+                                        <TableCell>
+                                            {sub.nextBilling ? format(new Date(sub.nextBilling), 'd MMM, yyyy', { locale: pt }) : 'N/A'}
+                                        </TableCell>
+                                        <TableCell className="text-right">
+                                             <DropdownMenu>
+                                                <DropdownMenuTrigger asChild>
+                                                <Button variant="ghost" className="h-8 w-8 p-0">
+                                                    <MoreHorizontal className="h-4 w-4" />
+                                                </Button>
+                                                </DropdownMenuTrigger>
+                                                <DropdownMenuContent align="end">
+                                                    <DropdownMenuItem>Ver Detalhes</DropdownMenuItem>
+                                                    <DropdownMenuItem>Alterar Plano</DropdownMenuItem>
+                                                    {sub.status === 'active' && (
+                                                        <DropdownMenuItem className="text-destructive" onClick={() => handleCancelSubscription(sub.id)}>
+                                                            Cancelar Subscrição
+                                                        </DropdownMenuItem>
+                                                    )}
+                                                </DropdownMenuContent>
+                                            </DropdownMenu>
+                                        </TableCell>
+                                    </TableRow>
+                                ))}
+                            </TableBody>
+                        </Table>
+                        )}
+                    </div>
                 </CardContent>
             </Card>
         </div>

@@ -7,8 +7,6 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { GeneralReport } from "@/components/admin/general-report";
-import { supabase } from "@/lib/supabase/client";
-import { getVacancies } from "@/lib/supabase/vacancy-service";
 import { useState } from "react";
 
 
@@ -16,75 +14,10 @@ export default function AdminDashboardPage() {
   const [reportData, setReportData] = useState<any>(null);
 
   const handleGenerateReport = async () => {
-    // Buscar cursos do Supabase
-    const { data: courseRows } = await supabase.from('courses').select('*');
-    const courses = (courseRows || []).map((row: any) => ({
-      id: String(row.id ?? row.code ?? crypto.randomUUID()),
-      name: row.name ?? row.title ?? 'Curso',
-      category: row.category ?? 'geral',
-    }));
-
-    // Derivar categorias a partir dos cursos (remove dependência de mocks)
-    const categorySet = new Set<string>(courses.map((c: any) => c.category));
-    const courseData = Array.from(categorySet).map(name => ({
-      name,
-      total: courses.filter((c: any) => c.category === name).length,
-    })).filter(c => c.total > 0);
-
-    // Buscar vagas do Supabase
-    const vacancies = await getVacancies(true);
-    const vacancyData = (vacancies || []).reduce((acc, vacancy) => {
-      const location = vacancy.location;
-      const existing = acc.find(item => item.name === location);
-      if (existing) {
-        existing.total++;
-      } else {
-        acc.push({ name: location, total: 1 });
-      }
-      return acc;
-    }, [] as { name: string, total: number }[]);
-
-    // Total de usuários do Supabase
-    const { count: totalUsers } = await supabase.from('users').select('*', { count: 'exact', head: true });
-
-    // Mock data for new charts and KPIs
-    const weeklyEngagementData = [
-      { day: 'Seg', users: 120 },
-      { day: 'Ter', users: 150 },
-      { day: 'Qua', users: 170 },
-      { day: 'Qui', users: 140 },
-      { day: 'Sex', users: 200 },
-      { day: 'Sáb', users: 90 },
-      { day: 'Dom', users: 70 },
-    ];
-
-    const recruitmentFunnelData = [
-        { stage: 'Candidaturas', count: 1200 },
-        { stage: 'Triagem', count: 400 },
-        { stage: 'Entrevista', count: 150 },
-        { stage: 'Oferta', count: 50 },
-        { stage: 'Contratado', count: 25 },
-    ];
-
-    setReportData({
-      totalCourses: courses.length,
-      totalVacancies: vacancies.length,
-      totalUsers: totalUsers || 0,
-      coursesByCategory: courseData,
-      vacanciesByLocation: vacancyData,
-      weeklyEngagement: weeklyEngagementData,
-      recruitmentFunnel: recruitmentFunnelData,
-      lmsKpis: {
-        completionRate: 78,
-        averageRating: 4.6,
-        firstAttemptSuccessRate: 85,
-      },
-      atsKpis: {
-        applicationsPerVacancy: 45.2,
-        timeToHire: 28,
-        profileCompletionRate: 65,
-      }
-    });
+    const res = await fetch('/api/admin/report', { cache: 'no-store', credentials: 'include' });
+    const json = await res.json();
+    if (!res.ok || !json?.ok) return;
+    setReportData(json.data);
   }
 
   return (
@@ -224,14 +157,16 @@ export default function AdminDashboardPage() {
                                         Gerar Relatório
                                     </Button>
                                 </DialogTrigger>
-                                <DialogContent className="max-w-4xl max-h-[90vh]">
+                                <DialogContent className="max-w-4xl h-[90vh] flex flex-col overflow-hidden">
                                     <DialogHeader>
                                         <DialogTitle>Relatório Geral da Plataforma</DialogTitle>
                                         <DialogDescription>
                                             Visão geral do estado atual da plataforma NexusTalent.
                                         </DialogDescription>
                                     </DialogHeader>
-                                    {reportData && <GeneralReport data={reportData} />}
+                                    <div className="flex-1 min-h-0">
+                                        {reportData && <GeneralReport data={reportData} />}
+                                    </div>
                                 </DialogContent>
                             </Dialog>
                         </CardContent>
@@ -244,9 +179,12 @@ export default function AdminDashboardPage() {
                             </CardTitle>
                             <CardDescription>Edite o conteúdo estático do site, como parceiros e estatísticas.</CardDescription>
                         </CardHeader>
-                        <CardContent>
+                        <CardContent className="flex flex-col gap-2">
                             <Button asChild>
                                 <Link href="/dashboard/settings">Gerir Conteúdo</Link>
+                            </Button>
+                            <Button asChild variant="outline">
+                                <Link href="/dashboard/settings/ai">Definições de IA</Link>
                             </Button>
                         </CardContent>
                     </Card>

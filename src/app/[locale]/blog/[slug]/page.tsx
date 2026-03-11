@@ -1,12 +1,12 @@
 import { notFound } from 'next/navigation';
-import { blogPosts } from '@/lib/blog-posts';
 import { type Metadata } from 'next';
 import { BlogPostContent } from '@/components/blog/blog-post-content';
+import { getBlogPostById, getBlogPosts } from '@/lib/supabase/blog-service';
 
 // This function runs on the server
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
   const { slug } = await params;
-  const post = blogPosts.find((p) => p.id === slug);
+  const post = await getBlogPostById(slug);
 
   if (!post) {
     return {
@@ -21,8 +21,9 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
   };
 }
 
-export function generateStaticParams() {
-  return blogPosts.map((post) => ({
+export async function generateStaticParams() {
+  const posts = await getBlogPosts();
+  return posts.map((post) => ({
     slug: post.id,
   }));
 }
@@ -30,13 +31,14 @@ export function generateStaticParams() {
 
 export default async function BlogPostPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  const post = blogPosts.find((p) => p.id === slug);
+  const post = await getBlogPostById(slug);
 
   if (!post) {
     notFound();
   }
   
-  const relatedPosts = blogPosts.filter(p => p.category === post.category && p.id !== post.id).slice(0, 3);
+  const all = await getBlogPosts();
+  const relatedPosts = all.filter(p => p.category === post.category && p.id !== post.id).slice(0, 3);
 
   return <BlogPostContent post={post} relatedPosts={relatedPosts} />;
 }

@@ -113,12 +113,13 @@ function CoursePlayerPage({ course }: { course: Course }) {
         }
 
       return (
-        <div className="w-full h-full bg-black flex flex-col items-center justify-center text-white text-center">
-            <VideoIcon size={64} />
-            <p className="ml-4 text-xl mt-4">Simulação do Media Player de Vídeo</p>
-            <p className="text-muted-foreground text-sm mt-2">A mostrar vídeo para: <strong className="text-white">{activeTopic?.title}</strong></p>
-        </div>
-      )
+        <iframe
+          src={activeTopic.videoUrl}
+          className="w-full h-full border-0"
+          title={activeTopic.title}
+          allowFullScreen
+        ></iframe>
+      );
     }
 
     return (
@@ -181,7 +182,7 @@ function CoursePlayerPage({ course }: { course: Course }) {
                     </TabsContent>
                     <TabsContent value="quiz">
                          <Card>
-                           <CardHeader><CardTitle>Quiz Interativo (Simulação)</CardTitle></CardHeader>
+                           <CardHeader><CardTitle>Quiz Interativo</CardTitle></CardHeader>
                             <CardContent className="text-center">
                                 {activeModule?.assessment && activeModule.assessment.questions.length > 0 ? (
                                     <>
@@ -223,7 +224,7 @@ function CoursePlayerPage({ course }: { course: Course }) {
                                 </div>
                                 <Button>Publicar</Button>
                                 <div className="border-t pt-4 space-y-4">
-                                  <p className="text-sm text-muted-foreground text-center">Simulação de um fórum.</p>
+                                  <p className="text-sm text-muted-foreground text-center">Ainda não há tópicos.</p>
                                 </div>
                             </CardContent>
                         </Card>

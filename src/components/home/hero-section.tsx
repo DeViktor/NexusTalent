@@ -4,8 +4,8 @@ import { Button } from '@/components/ui/button';
 import Link from 'next/link';
 import { ArrowRight } from 'lucide-react';
 
-export function HeroSection() {
-  const images = getImages();
+export async function HeroSection() {
+  const images = await getImages();
   const heroImage = images.find(p => p.id === 'home-hero');
 
   return (

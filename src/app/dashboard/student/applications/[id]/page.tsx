@@ -19,12 +19,6 @@ import { getApplication } from '@/lib/supabase/application-service';
 
 const statusSteps: ApplicationStatus[] = ['Recebida', 'Triagem', 'Teste', 'Entrevista', 'Oferta', 'Contratado'];
 
-const mockMessages = [
-    { sender: 'recruiter', text: 'Olá, obrigado pelo seu interesse na vaga. O seu perfil parece muito interessante.', timestamp: new Date(Date.now() - 1000 * 60 * 60 * 24) },
-    { sender: 'candidate', text: 'Olá, muito obrigado pelo contacto. Fico contente em saber!', timestamp: new Date(Date.now() - 1000 * 60 * 50 * 24) },
-    { sender: 'recruiter', text: 'Gostaríamos de agendar uma breve conversa. Teria disponibilidade amanhã à tarde?', timestamp: new Date(Date.now() - 1000 * 60 * 30)},
-];
-
 export default function ApplicationDetailPage() {
     const params = useParams();
     const router = useRouter();
@@ -35,6 +29,11 @@ export default function ApplicationDetailPage() {
     const [job, setJob] = useState<JobPosting | null>(null);
     const [recruiter, setRecruiter] = useState<UserProfile | null>(null);
     const [isLoading, setIsLoading] = useState(true);
+    const [conversationId, setConversationId] = useState<string | null>(null);
+    const [conversation, setConversation] = useState<{ messages: { id: string; sender: 'candidate' | 'recruiter'; text: string; timestamp: string }[] } | null>(null);
+    const [draft, setDraft] = useState('');
+    const [isSending, setIsSending] = useState(false);
+    const [isWithdrawing, setIsWithdrawing] = useState(false);
 
     useEffect(() => {
         const fetchData = async () => {
@@ -96,6 +95,34 @@ export default function ApplicationDetailPage() {
         };
         fetchData();
     }, [applicationId]);
+
+    useEffect(() => {
+        let active = true;
+        (async () => {
+            try {
+                const recruiterId = job?.recruiterId;
+                if (!recruiterId) return;
+                const startRes = await fetch('/api/student/conversations/start', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'include',
+                    body: JSON.stringify({ recruiterId }),
+                });
+                const startJson = await startRes.json();
+                if (!active) return;
+                if (!startRes.ok || !startJson?.ok) return;
+                const cid = String(startJson.conversationId);
+                setConversationId(cid);
+                const convRes = await fetch(`/api/student/conversations/${cid}`, { cache: 'no-store', credentials: 'include' });
+                const convJson = await convRes.json();
+                if (!active) return;
+                if (!convRes.ok || !convJson?.ok) return;
+                setConversation({ messages: convJson.conversation?.messages || [] });
+            } catch {
+            }
+        })();
+        return () => { active = false; };
+    }, [job?.recruiterId]);
     
     if (isLoading) {
         return <div className="flex items-center justify-center h-screen"><Loader2 className="h-8 w-8 animate-spin" /></div>;
@@ -108,13 +135,49 @@ export default function ApplicationDetailPage() {
     const currentStepIndex = statusSteps.indexOf(application.status);
     const getInitials = (name: string) => name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase();
     
-    const handleWithdraw = () => {
-        toast({
-            title: "Candidatura Retirada",
-            description: "A sua candidatura foi retirada com sucesso (simulação)."
-        });
-        router.push('/dashboard/student');
-    }
+    const handleWithdraw = async () => {
+        if (isWithdrawing) return;
+        setIsWithdrawing(true);
+        try {
+            const res = await fetch(`/api/student/applications/${application.id}/withdraw`, { method: 'POST', credentials: 'include' });
+            const json = await res.json();
+            if (!res.ok || !json?.ok) throw new Error(json?.error || 'Falha ao retirar candidatura.');
+            toast({ title: "Candidatura Retirada", description: "A sua candidatura foi retirada com sucesso." });
+            router.push('/dashboard/student');
+        } catch (e: any) {
+            toast({ variant: 'destructive', title: 'Erro', description: e?.message || 'Falha ao retirar candidatura.' });
+        } finally {
+            setIsWithdrawing(false);
+        }
+    };
+
+    const handleSend = async () => {
+        if (!conversationId) return;
+        const text = draft.trim();
+        if (!text) return;
+        if (isSending) return;
+        setIsSending(true);
+        try {
+            const res = await fetch(`/api/student/conversations/${conversationId}/messages`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
+                body: JSON.stringify({ text }),
+            });
+            const json = await res.json();
+            if (!res.ok || !json?.ok) throw new Error(json?.error || 'Falha ao enviar mensagem.');
+            setDraft('');
+            const convRes = await fetch(`/api/student/conversations/${conversationId}`, { cache: 'no-store', credentials: 'include' });
+            const convJson = await convRes.json();
+            if (convRes.ok && convJson?.ok) {
+                setConversation({ messages: convJson.conversation?.messages || [] });
+            }
+        } catch (e: any) {
+            toast({ variant: 'destructive', title: 'Erro', description: e?.message || 'Falha ao enviar mensagem.' });
+        } finally {
+            setIsSending(false);
+        }
+    };
     
     const safeApplicationDate = application.applicationDate;
 
@@ -164,24 +227,30 @@ export default function ApplicationDetailPage() {
                         </CardHeader>
                         <CardContent>
                             <div className="space-y-4 max-h-96 overflow-y-auto pr-4">
-                                {mockMessages.map((msg, index) => (
-                                    <div key={index} className={cn("flex gap-3", msg.sender === 'candidate' ? 'justify-end' : 'justify-start')}>
-                                        {msg.sender === 'recruiter' && recruiter && (
-                                            <Avatar>
-                                                <AvatarImage src={recruiter.profilePictureUrl} />
-                                                <AvatarFallback>{getInitials(`${recruiter.firstName} ${recruiter.lastName}`)}</AvatarFallback>
-                                            </Avatar>
-                                        )}
-                                        <div className={cn("max-w-md p-3 rounded-lg", msg.sender === 'candidate' ? 'bg-primary text-primary-foreground' : 'bg-secondary')}>
-                                            <p className="text-sm">{msg.text}</p>
+                                {(conversation?.messages || []).length === 0 ? (
+                                    <div className="text-sm text-muted-foreground text-center p-4">Nenhuma mensagem ainda.</div>
+                                ) : (
+                                    (conversation?.messages || []).map((msg) => (
+                                        <div key={msg.id} className={cn("flex gap-3", msg.sender === 'candidate' ? 'justify-end' : 'justify-start')}>
+                                            {msg.sender === 'recruiter' && recruiter && (
+                                                <Avatar>
+                                                    <AvatarImage src={recruiter.profilePictureUrl} />
+                                                    <AvatarFallback>{getInitials(`${recruiter.firstName} ${recruiter.lastName}`)}</AvatarFallback>
+                                                </Avatar>
+                                            )}
+                                            <div className={cn("max-w-md p-3 rounded-lg", msg.sender === 'candidate' ? 'bg-primary text-primary-foreground' : 'bg-secondary')}>
+                                                <p className="text-sm">{msg.text}</p>
+                                            </div>
                                         </div>
-                                    </div>
-                                ))}
+                                    ))
+                                )}
                             </div>
                             <Separator className="my-4" />
                             <div className="flex gap-2">
-                                <Textarea placeholder="Escreva a sua resposta..." />
-                                <Button>Enviar</Button>
+                                <Textarea placeholder="Escreva a sua resposta..." value={draft} onChange={(e) => setDraft(e.target.value)} />
+                                <Button onClick={handleSend} disabled={isSending || !conversationId}>
+                                    {isSending ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Enviar'}
+                                </Button>
                             </div>
                         </CardContent>
                     </Card>
@@ -211,7 +280,7 @@ export default function ApplicationDetailPage() {
                             <CardTitle className="flex items-center gap-2"><FileText /> Suas Ações</CardTitle>
                         </CardHeader>
                         <CardContent>
-                             <Button variant="destructive" className="w-full" onClick={handleWithdraw}>
+                             <Button variant="destructive" className="w-full" onClick={handleWithdraw} disabled={isWithdrawing}>
                                 <XCircle className="mr-2 h-4 w-4" /> Retirar Candidatura
                              </Button>
                         </CardContent>

@@ -110,7 +110,7 @@ export default function CandidatesPage() {
                 setAllCandidates(withStatus);
             } catch (e) {
                 console.error('Erro ao carregar candidatos:', e);
-                if (!mounted) setAllCandidates([]);
+                if (mounted) setAllCandidates([]);
             } finally {
                 if (mounted) setIsLoading(false);
             }

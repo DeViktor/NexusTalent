@@ -4,9 +4,9 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Briefcase, Users } from "lucide-react";
 
-export function RecruitmentSection() {
-    const images = getImages();
-    const recruitmentImage = images.find(p => p.id === 'recruitment-hero');
+export async function RecruitmentSection() {
+    const images = await getImages();
+    const recruitmentImage = images.find(p => p.id === 'home-recruitment' || p.id === 'recruitment-hero');
 
     return (
         <section className="py-16 sm:py-24 bg-card">

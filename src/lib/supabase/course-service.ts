@@ -111,10 +111,7 @@ export async function getCourseCategories(): Promise<CourseCategory[]> {
 export async function getPurchasedCourses(userId: string): Promise<Course[]> {
   const { data, error } = await supabase
     .from('purchased_courses')
-    .select(`
-      course_id,
-      course:courses(*)
-    `)
+    .select('course_id')
     .eq('user_id', userId);
 
   if (error) {
@@ -122,10 +119,30 @@ export async function getPurchasedCourses(userId: string): Promise<Course[]> {
     return [];
   }
 
-  // Extract the course object from the join and map it
-  return data
-    .map((item: any) => item.course)
-    .filter((course: any) => course !== null) // Filter out any potential nulls if course was deleted
+  const courseIds = (Array.isArray(data) ? data : [])
+    .map((item: any) => String(item?.course_id ?? '').trim())
+    .filter((id: string) => id.length > 0);
+
+  if (courseIds.length === 0) {
+    return [];
+  }
+
+  const { data: coursesData, error: coursesError } = await supabase
+    .from('courses')
+    .select(`
+      *,
+      category:course_categories(id, name)
+    `)
+    .in('id', courseIds);
+
+  if (coursesError) {
+    console.error('Error fetching purchased course details:', coursesError);
+    return [];
+  }
+
+  const order = new Map(courseIds.map((id, index) => [id, index]));
+  return (Array.isArray(coursesData) ? coursesData : [])
+    .sort((a: any, b: any) => (order.get(String(a.id)) ?? 0) - (order.get(String(b.id)) ?? 0))
     .map(mapDatabaseCourseToCourse);
 }
 

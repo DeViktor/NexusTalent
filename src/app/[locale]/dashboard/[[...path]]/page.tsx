@@ -12,9 +12,6 @@ export default async function LocalizedDashboardRedirectPage({
 
   const rest = Array.isArray(resolvedParams.path) && resolvedParams.path.length > 0 ? `/${resolvedParams.path.join('/')}` : '';
 
-  // Use the locale from params to build the correct redirect path
-  const locale = resolvedParams.locale;
-
   const qs = resolvedSearchParams
     ? new URLSearchParams(
         Object.entries(resolvedSearchParams).flatMap(([k, v]) => {
@@ -25,5 +22,5 @@ export default async function LocalizedDashboardRedirectPage({
       ).toString()
     : '';
 
-  redirect(`/${locale}/dashboard${rest}${qs ? `?${qs}` : ''}`);
+  redirect(`/dashboard${rest}${qs ? `?${qs}` : ''}`);
 }

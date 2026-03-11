@@ -20,6 +20,9 @@ export default function DashboardLayout({
                         </SidebarContent>
                     </Sidebar>
                     <SidebarInset>
+                        <div className="flex items-center gap-2 p-2 md:hidden">
+                            <SidebarTrigger />
+                        </div>
                         <main className="flex-grow p-4 sm:p-6 lg:p-8">
                             {children}
                         </main>

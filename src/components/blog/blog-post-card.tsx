@@ -1,9 +1,8 @@
 
 import Link from 'next/link';
 import Image from 'next/image';
-import type { BlogPost } from '@/lib/blog-posts';
+import type { BlogPost } from '@/lib/supabase/blog-service';
 import { Card, CardContent } from '@/components/ui/card';
-import { getImages } from '@/lib/site-data';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Calendar } from 'lucide-react';
@@ -15,9 +14,8 @@ interface BlogPostCardProps {
 }
 
 export function BlogPostCard({ post }: BlogPostCardProps) {
-  const images = getImages();
-  const image = images.find(p => p.id === post.imageId);
-  const authorAvatar = images.find(p => p.id === post.authorAvatarId);
+  const imageSrc = post.imageUrl || null;
+  const authorAvatarUrl = post.authorAvatarUrl || null;
 
   const getInitials = (name: string) => {
     if (!name) return '';
@@ -31,14 +29,13 @@ export function BlogPostCard({ post }: BlogPostCardProps) {
   return (
     <Link href={`/blog/${post.id}`} className="group">
       <Card className="h-full overflow-hidden transition-all duration-300 hover:shadow-xl hover:-translate-y-1 flex flex-col">
-        {image && (
+        {imageSrc && (
             <div className="relative w-full h-48">
                 <Image
-                src={image.imageUrl}
-                alt={image.description}
+                src={imageSrc}
+                alt={post.title}
                 fill
                 className="object-cover"
-                data-ai-hint={image.imageHint}
                 />
             </div>
         )}
@@ -47,9 +44,9 @@ export function BlogPostCard({ post }: BlogPostCardProps) {
             <h3 className="font-headline font-semibold text-xl flex-grow mb-4">{post.title}</h3>
             <p className="text-muted-foreground text-sm line-clamp-3 mb-6">{post.excerpt}</p>
             <div className="flex items-center gap-4 mt-auto border-t pt-4">
-                {authorAvatar && (
+                {authorAvatarUrl && (
                     <Avatar className="h-10 w-10">
-                        <AvatarImage src={authorAvatar.imageUrl} />
+                        <AvatarImage src={authorAvatarUrl} />
                         <AvatarFallback>{getInitials(post.author)}</AvatarFallback>
                     </Avatar>
                 )}

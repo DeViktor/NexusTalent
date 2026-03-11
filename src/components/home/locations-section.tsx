@@ -1,16 +1,10 @@
 import { Card } from '@/components/ui/card';
-import { getImages } from '@/lib/site-data';
+import { getSiteData } from '@/lib/site-data';
 import { MapPin } from 'lucide-react';
-import Image from 'next/image';
-
-const locations = [
-    { name: 'Angola', city: 'Luanda', imageId: 'location-angola' },
-    { name: 'Brasil', city: 'Santa Catarina', imageId: 'location-brasil' },
-    { name: 'Portugal', city: 'Setúbal', imageId: 'location-portugal' }
-];
-
-export function LocationsSection() {
-    const images = getImages();
+ 
+export async function LocationsSection() {
+    const data = await getSiteData();
+    const locations = Array.isArray(data.locations) ? data.locations : [];
     return (
         <section className="py-16 sm:py-24 bg-background">
             <div className="container mx-auto px-4">
@@ -20,18 +14,17 @@ export function LocationsSection() {
                 </div>
                 <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-8">
                     {locations.map(location => {
-                        const image = images.find(p => p.id === location.imageId);
                         return (
-                            <Card key={location.name} className="overflow-hidden group">
+                            <Card key={location.id} className="overflow-hidden group">
                                 <div className="relative h-64">
-                                    {image && <Image src={image.imageUrl} alt={image.description} fill className="object-cover transition-transform duration-300 group-hover:scale-105" data-ai-hint={image.imageHint} />}
-                                    <div className="absolute inset-0 bg-gradient-to-t from-black/70 to-transparent" />
+                                    <div className="absolute inset-0 bg-gradient-to-t from-black/70 to-black/10" />
                                     <div className="absolute bottom-0 left-0 p-6">
                                         <div className="flex items-center gap-2">
                                             <MapPin className="text-white" />
                                             <h3 className="font-headline text-2xl font-bold text-white">{location.name}</h3>
                                         </div>
-                                        <p className="text-white/90">{location.city}</p>
+                                        <p className="text-white/90">{location.address}</p>
+                                        <p className="text-white/80 text-sm">{location.phone}</p>
                                     </div>
                                 </div>
                             </Card>

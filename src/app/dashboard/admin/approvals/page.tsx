@@ -14,7 +14,7 @@ import { supabase } from '@/lib/supabase/client';
 import { updateCourseStatusAction } from '@/app/actions';
 import { useToast } from '@/hooks/use-toast';
 import Image from 'next/image';
-import { getImages } from '@/lib/site-data';
+import { getImages, type ImagePlaceholder } from '@/lib/site-data';
 import Link from 'next/link';
 
 export default function CourseApprovalsPage() {
@@ -22,6 +22,7 @@ export default function CourseApprovalsPage() {
   const { toast } = useToast();
   const [pendingCourses, setPendingCourses] = useState<Course[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [allImages, setAllImages] = useState<ImagePlaceholder[]>([]);
 
   useEffect(() => {
     let active = true;
@@ -58,6 +59,19 @@ export default function CourseApprovalsPage() {
     })();
     return () => { active = false; };
   }, []);
+  
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        const imgs = await getImages();
+        if (active) setAllImages(imgs);
+      } catch {
+        if (active) setAllImages([]);
+      }
+    })();
+    return () => { active = false; };
+  }, []);
 
   const handleUpdateStatus = async (courseId: string, newStatus: 'Ativo' | 'Rejeitado') => {
     try {
@@ -76,8 +90,6 @@ export default function CourseApprovalsPage() {
       });
     }
   };
-
-  const allImages = getImages();
 
   const renderContent = () => {
     if (isLoading) {

@@ -1,13 +1,25 @@
 import { genkit } from 'genkit';
 import { googleAI } from '@genkit-ai/google-genai';
+import { getAiApiKey } from '@/lib/config/ai';
 
-const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
+type AiInstance = ReturnType<typeof genkit>;
 
-export const ai = apiKey
-  ? genkit({
-      plugins: [googleAI({ apiKey })],
-      model: 'googleai/gemini-2.5-flash',
-    })
-  : genkit({
-      plugins: [],
-    });
+const cache = new Map<string, AiInstance>();
+const noKeyAi: AiInstance = genkit({ plugins: [] });
+
+export function getAi(apiKey?: string | null): AiInstance {
+  const key = typeof apiKey === 'string' ? apiKey.trim() : '';
+  if (!key) return noKeyAi;
+
+  const existing = cache.get(key);
+  if (existing) return existing;
+
+  const instance: AiInstance = genkit({
+    plugins: [googleAI({ apiKey: key })],
+    model: 'googleai/gemini-2.5-flash',
+  });
+  cache.set(key, instance);
+  return instance;
+}
+
+export const ai = getAi(getAiApiKey());

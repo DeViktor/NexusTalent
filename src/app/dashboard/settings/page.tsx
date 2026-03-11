@@ -1,6 +1,6 @@
 'use client';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Star, Building, Award, ArrowLeft, Loader2, Save, ShieldAlert, Image as ImageIcon } from "lucide-react";
+import { Star, Building, Award, ArrowLeft, Loader2, Save, ShieldAlert, Image as ImageIcon, Sparkles } from "lucide-react";
 import { EditableImageGrid } from "@/components/dashboard/settings/editable-image-grid";
 import { Button } from "@/components/ui/button";
 import { useRouter } from "next/navigation";
@@ -225,6 +225,22 @@ export default function SettingsPage() {
           </p>
         </div>
         <div className="space-y-8">
+            <Card>
+                <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                        <Sparkles />
+                        IA
+                    </CardTitle>
+                    <CardDescription className="mt-2">
+                        Configure a key padrão do sistema (admin) e/ou sua key pessoal para usar Gemini.
+                    </CardDescription>
+                </CardHeader>
+                <CardContent>
+                    <Button onClick={() => router.push('/dashboard/settings/ai')}>
+                        Abrir Definições de IA
+                    </Button>
+                </CardContent>
+            </Card>
             <SettingsForm siteData={siteData} onFormSubmit={handleFormSubmit} isSaving={isSaving} />
             
              <Card>

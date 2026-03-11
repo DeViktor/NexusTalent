@@ -5,20 +5,31 @@
  * - generateEmailCampaign - A function that handles the email content generation process.
  */
 
-import { ai } from '@/ai/genkit';
+import { getAi } from '@/ai/genkit';
 import { z } from 'zod';
 import { GenerateEmailCampaignInputSchema, EmailCampaignContentSchema, type GenerateEmailCampaignInput, type EmailCampaignContent } from '@/lib/schemas';
 import { getTemplateHtmlById } from '@/lib/email-templates';
 
-export async function generateEmailCampaign(input: GenerateEmailCampaignInput): Promise<EmailCampaignContent> {
-  return generateEmailCampaignFlow(input);
-}
+type Runtime = {
+  generateEmailCampaignFlow: (input: GenerateEmailCampaignInput) => Promise<EmailCampaignContent>;
+};
 
-const prompt = ai.definePrompt({
-  name: 'generateEmailCampaignPrompt',
-  input: { schema: GenerateEmailCampaignInputSchema },
-  output: { schema: EmailCampaignContentSchema },
-  prompt: `Você é um especialista em marketing por e-mail e copywriter. A sua tarefa é gerar o conteúdo de texto para um e-mail HTML.
+const runtimeCache = new Map<string, Runtime>();
+
+function getRuntime(apiKey?: string | null): Runtime {
+  const key = typeof apiKey === 'string' ? apiKey.trim() : '';
+  if (!key) throw new Error('IA não configurada.');
+  const cacheKey = key;
+  const existing = runtimeCache.get(cacheKey);
+  if (existing) return existing;
+
+  const ai = getAi(key);
+
+  const prompt = ai.definePrompt({
+    name: 'generateEmailCampaignPrompt',
+    input: { schema: GenerateEmailCampaignInputSchema },
+    output: { schema: EmailCampaignContentSchema },
+    prompt: `Você é um especialista em marketing por e-mail e copywriter. A sua tarefa é gerar o conteúdo de texto para um e-mail HTML.
 
 **Contexto:**
 - **Objetivo do E-mail:** {{{topic}}}
@@ -36,35 +47,43 @@ Com base no contexto acima, gere o seguinte conteúdo em formato JSON:
 3.  **buttonText**: O texto para o botão de call-to-action, que deve ser claro e direto.
 4.  **buttonLink**: Um URL de exemplo para o botão, que seja relevante para o tópico.
 `,
-});
+  });
 
-const generateEmailCampaignFlow = ai.defineFlow(
-  {
-    name: 'generateEmailCampaignFlow',
-    inputSchema: GenerateEmailCampaignInputSchema,
-    outputSchema: EmailCampaignContentSchema,
-  },
-  async (input) => {
-    const templateHtml = getTemplateHtmlById(input.template);
-    if (!templateHtml) {
-        throw new Error(`Template com o ID '${input.template}' não encontrado.`);
+  const generateEmailCampaignFlow = ai.defineFlow(
+    {
+      name: 'generateEmailCampaignFlow',
+      inputSchema: GenerateEmailCampaignInputSchema,
+      outputSchema: EmailCampaignContentSchema,
+    },
+    async (input) => {
+      const templateHtml = getTemplateHtmlById(input.template);
+      if (!templateHtml) {
+          throw new Error(`Template com o ID '${input.template}' não encontrado.`);
+      }
+
+      const { output } = await prompt({...input, template: templateHtml });
+      
+      if (!output) {
+        throw new Error('A IA não conseguiu gerar o conteúdo do e-mail.');
+      }
+      
+      const finalHtml = output.bodyHtml
+          .replace(/\[UNSUBSCRIBE_LINK\]/g, '#')
+          .replace(/\[COMPANY_NAME\]/g, 'NexusTalent')
+          .replace(/\[COMPANY_ADDRESS\]/g, 'Luanda, Angola');
+
+      return {
+          ...output,
+          bodyHtml: finalHtml,
+      };
     }
+  );
 
-    const { output } = await prompt({...input, template: templateHtml });
-    
-    if (!output) {
-      throw new Error('A IA não conseguiu gerar o conteúdo do e-mail.');
-    }
-    
-    // Replace generic placeholders with more specific ones from our app's context
-    const finalHtml = output.bodyHtml
-        .replace(/\[UNSUBSCRIBE_LINK\]/g, '#')
-        .replace(/\[COMPANY_NAME\]/g, 'NexusTalent')
-        .replace(/\[COMPANY_ADDRESS\]/g, 'Luanda, Angola');
+  const runtime = { generateEmailCampaignFlow };
+  runtimeCache.set(cacheKey, runtime);
+  return runtime;
+}
 
-    return {
-        ...output,
-        bodyHtml: finalHtml,
-    };
-  }
-);
+export async function generateEmailCampaign(input: GenerateEmailCampaignInput, apiKey?: string | null): Promise<EmailCampaignContent> {
+  return getRuntime(apiKey).generateEmailCampaignFlow(input);
+}

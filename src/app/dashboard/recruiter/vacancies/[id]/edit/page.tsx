@@ -22,6 +22,7 @@ import { format, parseISO } from 'date-fns';
 import { pt } from 'date-fns/locale';
 import { getVacancy, updateVacancy, type Vacancy as VacancyRow } from '@/lib/supabase/vacancy-service';
 import { Skeleton } from '@/components/ui/skeleton';
+import type { CourseCategory } from '@/lib/types';
 
 const formSchema = z.object({
   title: z.string().min(5, { message: 'O título da vaga deve ter pelo menos 5 caracteres.' }),
@@ -47,10 +48,9 @@ export default function EditVacancyPage() {
   const vacancyId = Array.isArray(params.id) ? params.id[0] : params.id;
   
   const [vacancy, setVacancy] = useState<VacancyRow | null | undefined>(undefined);
+  const [courseCategories, setCourseCategories] = useState<CourseCategory[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const { toast } = useToast();
-  
-  const courseCategories = getCourseCategories();
   
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
@@ -69,6 +69,19 @@ export default function EditVacancyPage() {
         salaryRange: '',
     }
   });
+
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        const categories = await getCourseCategories();
+        if (active) setCourseCategories(Array.isArray(categories) ? categories : []);
+      } catch {
+        if (active) setCourseCategories([]);
+      }
+    })();
+    return () => { active = false };
+  }, []);
 
   useEffect(() => {
     let mounted = true;

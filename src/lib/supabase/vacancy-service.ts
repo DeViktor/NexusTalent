@@ -11,7 +11,7 @@ export async function getVacancies(includeExpired = false) {
     let query = supabase.from('vacancies').select('*');
     
     if (!includeExpired) {
-      const today = new Date().toISOString();
+      const today = new Date().toISOString().replace(/\.\d{3}Z$/, 'Z');
       query = query.or(`expires_at.is.null,expires_at.gt.${today}`);
     }
     
@@ -34,7 +34,7 @@ export async function getRecruiterVacancies(recruiterId: string, includeExpired 
       .eq('recruiter_id', recruiterId);
     
     if (!includeExpired) {
-      const today = new Date().toISOString();
+      const today = new Date().toISOString().replace(/\.\d{3}Z$/, 'Z');
       query = query.or(`expires_at.is.null,expires_at.gt.${today}`);
     }
     
@@ -68,9 +68,19 @@ export async function getVacancy(id: string) {
 // Criar uma nova vaga
 export async function createVacancy(vacancy: VacancyInsert) {
   try {
+    const withId: VacancyInsert = {
+      ...vacancy,
+      id: vacancy.id && String(vacancy.id).trim().length > 0
+        ? vacancy.id
+        : `vac-${crypto.randomUUID()}`,
+    };
+    const insertPayload: any = { ...withId };
+    if (insertPayload.type === undefined) {
+      insertPayload.type = insertPayload.job_type;
+    }
     const { data, error } = await supabase
       .from('vacancies')
-      .insert(vacancy)
+      .insert(insertPayload)
       .select()
       .single();
     

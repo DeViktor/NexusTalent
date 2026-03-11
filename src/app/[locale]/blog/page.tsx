@@ -1,5 +1,3 @@
-import { blogPosts } from '@/lib/blog-posts';
-import { getImages } from '@/lib/site-data';
 import Image from 'next/image';
 import Link from 'next/link';
 import { Header } from '@/components/layout/header';
@@ -8,11 +6,11 @@ import { Button } from '@/components/ui/button';
 import { ArrowRight } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { BlogPostCard } from '@/components/blog/blog-post-card';
+import { getBlogPosts } from '@/lib/supabase/blog-service';
 
-export default function BlogPage() {
+export default async function BlogPage() {
+  const blogPosts = await getBlogPosts();
   const [featuredPost, ...otherPosts] = blogPosts;
-  const images = getImages();
-  const featuredImage = images.find(p => p.id === featuredPost.imageId);
 
   return (
     <>
@@ -27,13 +25,13 @@ export default function BlogPage() {
           </div>
 
           {/* Featured Post */}
-          {featuredPost && featuredImage && (
+          {featuredPost && featuredPost.imageUrl && (
             <section className="mb-16">
               <Card className="grid lg:grid-cols-2 overflow-hidden border-2 border-primary/20 shadow-xl">
                 <div className="relative w-full h-64 lg:h-auto">
                   <Image
-                    src={featuredImage.imageUrl}
-                    alt={featuredImage.description}
+                    src={featuredPost.imageUrl}
+                    alt={featuredPost.title}
                     fill
                     className="object-cover"
                   />

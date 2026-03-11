@@ -1,17 +1,15 @@
 'use client';
 import { getSiteData } from "@/lib/site-data";
-import Image from "next/image";
 import { useEffect, useState } from "react";
-import type { ImagePlaceholder } from "@/lib/site-data";
 
 
 export function CertificationsSection() {
-    const [certifications, setCertifications] = useState<ImagePlaceholder[]>([]);
+    const [certifications, setCertifications] = useState<Array<{ id: string; name: string; description: string }>>([]);
 
     useEffect(() => {
         async function loadData() {
             const data = await getSiteData();
-            setCertifications(data.images.filter(p => p.id.startsWith('cert-')));
+            setCertifications(Array.isArray(data.certifications) ? data.certifications : []);
         }
         loadData();
     }, []);
@@ -29,16 +27,9 @@ export function CertificationsSection() {
                 </div>
                 <div className="flex flex-wrap justify-center items-center gap-8 md:gap-12">
                     {certifications.map(cert => (
-                        <div key={cert.id} className="flex flex-col items-center gap-2" title={cert.description}>
-                            <div className="relative w-36 h-24">
-                                <Image
-                                    src={cert.imageUrl}
-                                    alt={cert.description}
-                                    fill
-                                    className="object-contain"
-                                    data-ai-hint={cert.imageHint}
-                                />
-                            </div>
+                        <div key={cert.id} className="flex flex-col items-center gap-1 text-center">
+                            <div className="font-semibold">{cert.name}</div>
+                            <div className="text-sm text-muted-foreground">{cert.description}</div>
                         </div>
                     ))}
                 </div>

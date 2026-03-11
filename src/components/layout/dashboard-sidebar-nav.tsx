@@ -23,6 +23,7 @@ import {
   BarChart3,
   Settings,
   MessageSquare,
+  Sparkles,
 } from 'lucide-react';
 
 type NavItem = {
@@ -99,6 +100,7 @@ export function DashboardSidebarNav() {
 
   if (role === 'admin') {
     general.push(
+      { href: '/dashboard/settings/ai', label: 'IA', icon: Sparkles, activeMatch: 'prefix' },
       { href: '/dashboard/admin/users', label: 'Utilizadores', icon: Users, activeMatch: 'prefix' },
       { href: '/dashboard/admin/vacancies', label: 'Vagas', icon: Briefcase, activeMatch: 'prefix' },
       { href: '/dashboard/admin/courses', label: 'Cursos', icon: GraduationCap, activeMatch: 'prefix' },

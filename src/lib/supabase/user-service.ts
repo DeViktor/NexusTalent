@@ -12,7 +12,7 @@ export function mapUserRowToUserProfile(row: UserRow): UserProfile {
   const fullName = computedName || '';
   const [firstName, ...rest] = fullName.split(' ');
   const lastName = rest.join(' ');
-  const role = (row.role || 'student') as UserProfile['userType'];
+  const role = ((anyRow.role ?? anyRow.user_type) || 'student') as UserProfile['userType'];
 
   return {
     id: row.id,

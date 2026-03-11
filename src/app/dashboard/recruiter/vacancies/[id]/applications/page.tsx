@@ -9,6 +9,8 @@ import { RecruitmentPipeline } from "@/components/recruitment/recruitment-pipeli
 // adiar a importação do jsPDF/autotable para evitar erros em ambientes onde o window ainda não está disponível
 import { getVacancy } from "@/lib/supabase/vacancy-service";
 import { getApplicationsByVacancy } from "@/lib/supabase/application-service";
+import { updateApplicationAction } from "@/app/actions";
+import { toast } from "@/hooks/use-toast";
 
 interface TriagedCandidate {
   id: string;
@@ -128,11 +130,24 @@ export default function VacancyApplicationsPage() {
     }, [vacancyId, searchParams]);
 
     const handleStatusChange = (applicationId: string, newStatus: ApplicationStatus, notes?: string) => {
-        setApplications(prev => prev.map(app => 
-            app.id === applicationId 
-            ? { ...app, status: newStatus, notes: notes !== undefined ? notes : app.notes } 
+        const snapshot = applications.find(a => a.id === applicationId);
+        if (!snapshot) return;
+        setApplications(prev => prev.map(app =>
+            app.id === applicationId
+            ? { ...app, status: newStatus, notes: notes !== undefined ? notes : app.notes }
             : app
         ));
+        (async () => {
+            const res = await updateApplicationAction({
+                applicationId,
+                status: newStatus,
+                notes: notes !== undefined ? notes : snapshot.notes,
+            });
+            if (!res?.success) {
+                setApplications(prev => prev.map(app => app.id === applicationId ? snapshot : app));
+                toast({ variant: 'destructive', title: 'Erro', description: res?.message || 'Não foi possível salvar a atualização do candidato.' });
+            }
+        })();
     };
 
     const handleGenerateReport = async () => {

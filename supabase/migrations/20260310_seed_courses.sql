@@ -1,0 +1,113 @@
+insert into public.courses (
+  id,
+  name,
+  category,
+  image_id,
+  duration,
+  format,
+  price,
+  currency,
+  general_objective,
+  what_you_will_learn,
+  modules,
+  status
+)
+values
+  (
+    'TA-001',
+    'Técnicas de Apresentação',
+    'comportamental',
+    'gallery-1',
+    '24 horas',
+    'Presencial',
+    25000,
+    'AOA',
+    'Desenvolver competências de comunicação e apresentação em público.',
+    '["Estruturar uma apresentação eficaz","Comunicação verbal e não-verbal","Gerir nervosismo ao falar em público"]'::jsonb,
+    '[]'::jsonb,
+    'Ativo'
+  ),
+  (
+    'GC-002',
+    'Gestão de Conflitos',
+    'comportamental',
+    'gallery-2',
+    '20 horas',
+    'Online',
+    20000,
+    'AOA',
+    'Capacitar participantes com ferramentas para identificar, gerir e resolver conflitos.',
+    '["Técnicas de negociação","Mediação","Comunicação assertiva"]'::jsonb,
+    '[]'::jsonb,
+    'Ativo'
+  ),
+  (
+    'PB-101',
+    'Power BI Essencial',
+    'informatica-it',
+    'course-power-bi',
+    '16 horas',
+    'Online',
+    30000,
+    'AOA',
+    'Introduzir análise de dados e dashboards no Power BI.',
+    '["Modelagem básica","Visualizações","Publicação de relatórios"]'::jsonb,
+    '[]'::jsonb,
+    'Ativo'
+  ),
+  (
+    'UX-201',
+    'Fundamentos de UX',
+    'informatica-it',
+    'course-ux',
+    '12 horas',
+    'Online',
+    28000,
+    'AOA',
+    'Aprender princípios e processos de UX para criar experiências melhores.',
+    '["Pesquisa com usuários","Wireframes","Testes de usabilidade"]'::jsonb,
+    '[]'::jsonb,
+    'Ativo'
+  ),
+  (
+    'LD-301',
+    'Liderança e Motivação de Pessoas',
+    'rh-gestao',
+    'course-leadership',
+    '30 horas',
+    'Presencial',
+    45000,
+    'AOA',
+    'Desenvolver habilidades de liderança para gestão de equipes.',
+    '["Comunicação e influência","Motivação","Gestão de desempenho"]'::jsonb,
+    '[]'::jsonb,
+    'Ativo'
+  ),
+  (
+    'MK-401',
+    'Marketing Digital na Prática',
+    'marketing-comercial',
+    'gallery-3',
+    '18 horas',
+    'Híbrido',
+    35000,
+    'AOA',
+    'Planejar e executar campanhas de marketing digital orientadas a resultados.',
+    '["Funil e jornada","Anúncios e métricas","Conteúdo e SEO"]'::jsonb,
+    '[]'::jsonb,
+    'Ativo'
+  )
+on conflict (id) do update set
+  name = excluded.name,
+  category = excluded.category,
+  image_id = excluded.image_id,
+  duration = excluded.duration,
+  format = excluded.format,
+  price = excluded.price,
+  currency = excluded.currency,
+  general_objective = excluded.general_objective,
+  what_you_will_learn = excluded.what_you_will_learn,
+  modules = excluded.modules,
+  status = excluded.status;
+
+notify pgrst, 'reload schema';

@@ -1,12 +1,11 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { FileWarning, Files, ArrowLeft } from 'lucide-react';
 import type { Application, ApplicationStatus } from '@/lib/types';
 import { ApplicationCard } from '@/components/admin/application-card';
-import { applications as mockApplications } from '@/lib/applications';
 import { Button } from '@/components/ui/button';
 import { useRouter } from 'next/navigation';
 
@@ -14,11 +13,13 @@ import { useRouter } from 'next/navigation';
 const ApplicationList = ({
   applications,
   isLoading,
-  error
+  error,
+  onStatusChange
 }: {
   applications: Application[] | null,
   isLoading: boolean,
-  error: Error | null
+  error: Error | null,
+  onStatusChange: (applicationId: string, newStatus: ApplicationStatus) => void
 }) => {
     if (isLoading) {
       return (
@@ -62,7 +63,7 @@ const ApplicationList = ({
     return (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {applications.map(app => (
-                <ApplicationCard key={app.id} application={app} onStatusChange={() => {}} />
+                <ApplicationCard key={app.id} application={app} onStatusChange={onStatusChange} />
             ))}
         </div>
     );
@@ -77,17 +78,54 @@ const CardHeader = ({ children, ...props }: React.HTMLAttributes<HTMLDivElement>
 );
 
 export default function ManageApplicationsPage() {
-  const [allApplications, setAllApplications] = useState<Application[]>(mockApplications);
-  const [isLoading, setIsLoading] = useState(false);
+  const [allApplications, setAllApplications] = useState<Application[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
   const router = useRouter();
 
-  const handleStatusUpdate = (appId: string, newStatus: ApplicationStatus) => {
-    setAllApplications(prevApps => 
-        prevApps.map(app => 
-            app.id === appId ? { ...app, status: newStatus } : app
-        )
-    );
+  const loadApplications = async () => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const res = await fetch('/api/admin/applications', { cache: 'no-store', credentials: 'include' });
+      const json = await res.json();
+      if (!res.ok || !json?.ok) throw new Error(json?.error || 'Falha ao carregar candidaturas.');
+      const rows = Array.isArray(json.applications) ? json.applications : [];
+      setAllApplications(
+        rows.map((r: any) => ({
+          id: String(r.id),
+          userId: String(r.userId),
+          jobPostingId: String(r.jobPostingId),
+          status: String(r.status) as ApplicationStatus,
+          applicationDate: r.applicationDate ? new Date(String(r.applicationDate)) : new Date(),
+        }))
+      );
+    } catch (e: any) {
+      setAllApplications([]);
+      setError(e instanceof Error ? e : new Error('Falha ao carregar candidaturas.'));
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadApplications();
+  }, []);
+
+  const handleStatusUpdate = async (appId: string, newStatus: ApplicationStatus) => {
+    try {
+      const res = await fetch(`/api/admin/applications/${appId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ status: newStatus }),
+      });
+      const json = await res.json();
+      if (!res.ok || !json?.ok) throw new Error(json?.error || 'Falha ao atualizar status.');
+      setAllApplications(prevApps => prevApps.map(app => (app.id === appId ? { ...app, status: newStatus } : app)));
+    } catch (e: any) {
+      setError(e instanceof Error ? e : new Error('Falha ao atualizar status.'));
+    }
   };
 
   const filteredApplications = (status: ApplicationStatus | 'all') => {
@@ -121,25 +159,13 @@ export default function ManageApplicationsPage() {
         </TabsList>
 
         <TabsContent value="all">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {allApplications.map(app => (
-                <ApplicationCard key={app.id} application={app} onStatusChange={handleStatusUpdate} />
-            ))}
-          </div>
+          <ApplicationList applications={allApplications} isLoading={isLoading} error={error} onStatusChange={handleStatusUpdate} />
         </TabsContent>
         <TabsContent value="interesting">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {interestingApplications.map(app => (
-                <ApplicationCard key={app.id} application={app} onStatusChange={handleStatusUpdate} />
-            ))}
-          </div>
+          <ApplicationList applications={interestingApplications} isLoading={isLoading} error={error} onStatusChange={handleStatusUpdate} />
         </TabsContent>
         <TabsContent value="rejected">
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {rejectedApplications.map(app => (
-                  <ApplicationCard key={app.id} application={app} onStatusChange={handleStatusUpdate} />
-              ))}
-            </div>
+            <ApplicationList applications={rejectedApplications} isLoading={isLoading} error={error} onStatusChange={handleStatusUpdate} />
         </TabsContent>
       </Tabs>
     </div>

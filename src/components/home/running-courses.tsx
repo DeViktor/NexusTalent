@@ -6,7 +6,7 @@ import {
     CarouselContent,
     CarouselItem,
 } from "@/components/ui/carousel"
-import { getImages } from "@/lib/site-data";
+import { getImages, type ImagePlaceholder } from "@/lib/site-data";
 import { supabase } from '@/lib/supabase/client';
 import Image from 'next/image';
 import { Card } from '../ui/card';
@@ -19,6 +19,7 @@ export function RunningCourses() {
         Autoplay({ delay: 2000, stopOnInteraction: true })
     )
     const [runningCourses, setRunningCourses] = useState<Course[]>([]);
+    const [images, setImages] = useState<ImagePlaceholder[]>([]);
 
     useEffect(() => {
         const fetchRunning = async () => {
@@ -50,8 +51,19 @@ export function RunningCourses() {
         };
         fetchRunning();
     }, []);
-
-    const images = getImages();
+    
+    useEffect(() => {
+        let active = true;
+        (async () => {
+            try {
+                const imgs = await getImages();
+                if (active) setImages(imgs);
+            } catch {
+                if (active) setImages([]);
+            }
+        })();
+        return () => { active = false; };
+    }, []);
 
     return (
         <section className="py-16 sm:py-24 bg-card">
@@ -82,20 +94,22 @@ export function RunningCourses() {
                                     <div className="p-1">
                                     <Link href={`/courses/${course.id}`} className="group">
                                         <Card className="overflow-hidden relative">
-                                            {image && (
-                                                <div className="relative h-48 w-full">
+                                            <div className="relative h-48 w-full">
+                                                {image ? (
                                                     <Image 
                                                         src={image.imageUrl} 
                                                         alt={image.description} 
                                                         fill
                                                         className="object-cover transition-transform duration-300 group-hover:scale-105" 
                                                     />
-                                                     <div className="absolute inset-0 bg-black/50 group-hover:bg-black/60 transition-colors" />
-                                                     <div className="absolute bottom-0 left-0 p-4">
-                                                        <h3 className="font-headline text-lg font-bold text-white">{course.name}</h3>
-                                                     </div>
+                                                ) : (
+                                                    <div className="absolute inset-0 bg-secondary" />
+                                                )}
+                                                <div className="absolute inset-0 bg-black/50 group-hover:bg-black/60 transition-colors" />
+                                                <div className="absolute bottom-0 left-0 p-4">
+                                                    <h3 className="font-headline text-lg font-bold text-white">{course.name}</h3>
                                                 </div>
-                                            )}
+                                            </div>
                                         </Card>
                                      </Link>
                                     </div>

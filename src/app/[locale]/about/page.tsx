@@ -1,7 +1,6 @@
 import Image from 'next/image';
 import { Card, CardContent } from '@/components/ui/card';
 import { MapPin, Target, Users, GraduationCap, Building, Eye, TrendingUp } from 'lucide-react';
-import { getImages } from '@/lib/site-data';
 import { LocationsSection } from '@/components/home/locations-section';
 import { Header } from '@/components/layout/header';
 import { Footer } from '@/components/layout/footer';
@@ -16,9 +15,6 @@ const values = [
 ];
 
 export default function AboutPage() {
-    const images = getImages();
-    const aboutHeroImage = images.find(p => p.id === 'about-hero');
-
     return (
         <>
             <Header />

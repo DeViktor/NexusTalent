@@ -8,7 +8,7 @@
  * - GenerateCourseContentOutput - The return type for the generateCourseContent function.
  */
 
-import {ai} from '@/ai/genkit';
+import { getAi } from '@/ai/genkit';
 import {z} from 'genkit';
 import { GenerateCourseContentInputSchema, GenerateCourseContentOutputSchema } from '@/lib/schemas';
 
@@ -18,26 +18,26 @@ export type GenerateCourseContentOutput = z.infer<typeof GenerateCourseContentOu
 const GenerateCourseContentOutputSchemaWithoutImage = GenerateCourseContentOutputSchema.omit({ imageDataUri: true });
 
 
-export async function generateCourseContent(input: GenerateCourseContentInput): Promise<z.infer<typeof GenerateCourseContentOutputSchemaWithoutImage>> {
-  return generateCourseContentFlow(input);
-}
+type Runtime = {
+  generateCourseContentFlow: (input: GenerateCourseContentInput) => Promise<z.infer<typeof GenerateCourseContentOutputSchemaWithoutImage>>;
+};
 
-export async function generateCourseImage(imageHint: string): Promise<string> {
-    const { media } = await ai.generate({
-        model: 'googleai/imagen-4.0-fast-generate-001',
-        prompt: `Uma imagem de cabeçalho profissional e moderna para um e-mail sobre: ${imageHint}. A imagem deve ser limpa, atrativa e adequada para um contexto de negócios. Evite texto na imagem.`
-      });
-    if (!media.url) {
-        throw new Error("AI failed to generate an image.");
-    }
-    return media.url;
-}
+const runtimeCache = new Map<string, Runtime>();
 
-const prompt = ai.definePrompt({
-  name: 'generateCourseContentPrompt',
-  input: {schema: GenerateCourseContentInputSchema},
-  output: {schema: GenerateCourseContentOutputSchemaWithoutImage},
-  prompt: `You are an expert instructional designer. Based on the course title, category, and level, generate the following content in Portuguese:
+function getRuntime(apiKey?: string | null): Runtime {
+  const key = typeof apiKey === 'string' ? apiKey.trim() : '';
+  if (!key) throw new Error('IA não configurada.');
+  const cacheKey = key;
+  const existing = runtimeCache.get(cacheKey);
+  if (existing) return existing;
+
+  const ai = getAi(key);
+
+  const prompt = ai.definePrompt({
+    name: 'generateCourseContentPrompt',
+    input: {schema: GenerateCourseContentInputSchema},
+    output: {schema: GenerateCourseContentOutputSchemaWithoutImage},
+    prompt: `You are an expert instructional designer. Based on the course title, category, and level, generate the following content in Portuguese:
 - A unique and descriptive course ID (e.g., 'XY-123').
 - A detailed general objective.
 - A list of 4-6 specific learning outcomes ('what you will learn').
@@ -49,22 +49,44 @@ Course Title: {{{courseName}}}
 Category: {{{courseCategory}}}
 Level: {{{courseLevel}}}
 `,
-});
+  });
 
+  const generateCourseContentFlow = ai.defineFlow(
+    {
+      name: 'generateCourseContentFlow',
+      inputSchema: GenerateCourseContentInputSchema,
+      outputSchema: GenerateCourseContentOutputSchemaWithoutImage,
+    },
+    async input => {
+      const {output: textOutput} = await prompt(input);
 
-const generateCourseContentFlow = ai.defineFlow(
-  {
-    name: 'generateCourseContentFlow',
-    inputSchema: GenerateCourseContentInputSchema,
-    outputSchema: GenerateCourseContentOutputSchemaWithoutImage,
-  },
-  async input => {
-    const {output: textOutput} = await prompt(input);
+      if(!textOutput) {
+          throw new Error("Failed to generate course content text.");
+      }
 
-    if(!textOutput) {
-        throw new Error("Failed to generate course content text.");
+      return textOutput;
     }
+  );
 
-    return textOutput;
-  }
-);
+  const runtime = { generateCourseContentFlow };
+  runtimeCache.set(cacheKey, runtime);
+  return runtime;
+}
+
+export async function generateCourseContent(input: GenerateCourseContentInput, apiKey?: string | null): Promise<z.infer<typeof GenerateCourseContentOutputSchemaWithoutImage>> {
+  return getRuntime(apiKey).generateCourseContentFlow(input);
+}
+
+export async function generateCourseImage(imageHint: string, apiKey?: string | null): Promise<string> {
+    const key = typeof apiKey === 'string' ? apiKey.trim() : '';
+    if (!key) throw new Error('IA não configurada.');
+    const ai = getAi(key);
+    const { media } = await ai.generate({
+        model: 'googleai/imagen-4.0-fast-generate-001',
+        prompt: `Uma imagem de cabeçalho profissional e moderna para um e-mail sobre: ${imageHint}. A imagem deve ser limpa, atrativa e adequada para um contexto de negócios. Evite texto na imagem.`
+      });
+    if (!media.url) {
+        throw new Error("AI failed to generate an image.");
+    }
+    return media.url;
+}

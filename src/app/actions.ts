@@ -28,34 +28,122 @@ import type { Course } from "@/lib/types";
 import type { SiteData, ImagePlaceholder } from "@/lib/site-data";
 
 import { revalidatePath } from "next/cache";
-import { promises as fs } from 'fs';
-import path from 'path';
 import { supabase, getServerSupabase } from "@/lib/supabase/client";
 import { getCourses, getCourseCategories } from "@/lib/course-service";
+import type { VacancyInsert } from "@/lib/supabase/vacancy-service";
+import { getAiKeyStatus, upsertSystemGeminiKey, clearSystemGeminiKey, upsertUserGeminiKey, clearUserGeminiKey, resolveGeminiApiKey } from "@/lib/ai/keys";
 import { z } from "zod";
 import { cookies } from "next/headers";
 import { verifySession } from "@/lib/auth/session";
+
+async function getCurrentSessionUserId(): Promise<string | null> {
+    const cookieStore = await cookies();
+    const appSession = cookieStore.get('app_session')?.value;
+    const session = appSession ? await verifySession(appSession) : null;
+    return session?.userId ?? null;
+}
+
+async function getCurrentUserRole(): Promise<string | null> {
+    const userId = await getCurrentSessionUserId();
+    if (!userId) return null;
+    const serverSupabase = getServerSupabase();
+    const { data: rows, error } = await (serverSupabase as any)
+        .from('users')
+        .select('role')
+        .eq('id', userId)
+        .limit(1);
+    if (error) return null;
+    const role = (Array.isArray(rows) ? rows[0]?.role : null) as string | null;
+    return role ?? null;
+}
+
+async function getEffectiveGeminiKey(): Promise<string | null> {
+    const userId = await getCurrentSessionUserId();
+    return resolveGeminiApiKey(userId);
+}
+
+export async function getAiSettingsAction(): Promise<{ provider: 'gemini'; userKeySet: boolean; systemKeySet: boolean; envKeySet: boolean }> {
+    const userId = await getCurrentSessionUserId();
+    if (!userId) {
+        return { provider: 'gemini', userKeySet: false, systemKeySet: false, envKeySet: false };
+    }
+    return getAiKeyStatus(userId);
+}
+
+export async function setUserGeminiKeyAction(apiKey: string): Promise<{ success: boolean; message: string }> {
+    try {
+        const userId = await getCurrentSessionUserId();
+        if (!userId) return { success: false, message: 'Sessão inválida. Faça login novamente.' };
+        if (!apiKey || apiKey.trim().length < 10) return { success: false, message: 'Key inválida.' };
+        await upsertUserGeminiKey(userId, apiKey);
+        return { success: true, message: 'Key salva com sucesso.' };
+    } catch (e: any) {
+        return { success: false, message: e?.message || 'Falha ao salvar key.' };
+    }
+}
+
+export async function clearUserGeminiKeyAction(): Promise<{ success: boolean; message: string }> {
+    try {
+        const userId = await getCurrentSessionUserId();
+        if (!userId) return { success: false, message: 'Sessão inválida. Faça login novamente.' };
+        await clearUserGeminiKey(userId);
+        return { success: true, message: 'Key removida.' };
+    } catch (e: any) {
+        return { success: false, message: e?.message || 'Falha ao remover key.' };
+    }
+}
+
+export async function setSystemGeminiKeyAction(apiKey: string): Promise<{ success: boolean; message: string }> {
+    try {
+        const role = await getCurrentUserRole();
+        if (role !== 'admin') return { success: false, message: 'Acesso negado.' };
+        if (!apiKey || apiKey.trim().length < 10) return { success: false, message: 'Key inválida.' };
+        await upsertSystemGeminiKey(apiKey);
+        return { success: true, message: 'Key padrão salva com sucesso.' };
+    } catch (e: any) {
+        return { success: false, message: e?.message || 'Falha ao salvar key padrão.' };
+    }
+}
+
+export async function clearSystemGeminiKeyAction(): Promise<{ success: boolean; message: string }> {
+    try {
+        const role = await getCurrentUserRole();
+        if (role !== 'admin') return { success: false, message: 'Acesso negado.' };
+        await clearSystemGeminiKey();
+        return { success: true, message: 'Key padrão removida.' };
+    } catch (e: any) {
+        return { success: false, message: e?.message || 'Falha ao remover key padrão.' };
+    }
+}
 
 // AI Actions
 export async function analyzeResumeAction(input: AIResumeAnalysisInput): Promise<AIResumeAnalysisOutput> {
     // The try-catch block is moved to the client component
     // to handle errors on a per-file basis during bulk analysis.
-    const output = await aiResumeAnalysis(input);
+    const apiKey = await getEffectiveGeminiKey();
+    if (!apiKey) {
+        throw new Error('IA não configurada.');
+    }
+    const output = await aiResumeAnalysis(input, apiKey);
     return output;
 }
 
 export async function extractProfileFromResumeAction(input: ExtractProfileFromResumeInput): Promise<ExtractProfileFromResumeOutput> {
     try {
-      const output = await extractProfileFromResume(input);
+      const apiKey = await getEffectiveGeminiKey();
+      if (!apiKey) {
+        throw new Error('IA não configurada.');
+      }
+      const output = await extractProfileFromResume(input, apiKey);
       return output;
     } catch (error) {
       console.error("Error in extractProfileFromResumeAction:", error);
+      if (error instanceof Error && error.message === 'IA não configurada.') throw error;
       throw new Error("Failed to extract profile from resume. Please try again.");
     }
   }
 
 export async function getCourseRecommendationsAction(input: { userProfile: string }): Promise<PersonalizedCourseRecommendationsOutput> {
-    // Buscar cursos do Supabase; se vazio, usa lista vazia (sem mocks)
     let existingCourses: Course[] = [];
     try {
         const { data, error } = await supabase.from('courses').select('*');
@@ -88,17 +176,20 @@ export async function getCourseRecommendationsAction(input: { userProfile: strin
     }
 
     try {
-        const output = await personalizedCourseRecommendations(flowInput);
+        const apiKey = await getEffectiveGeminiKey();
+        if (!apiKey) throw new Error('IA não configurada.');
+        const output = await personalizedCourseRecommendations(flowInput, apiKey);
         return output;
     } catch (error) {
         console.error("Error in getCourseRecommendationsAction:", error);
+        if (error instanceof Error && error.message === 'IA não configurada.') throw error;
         throw new Error("Failed to get course recommendations. Please try again.");
     }
 }
 
 export async function generateCourseContentAction(input: GenerateCourseContentInput): Promise<z.infer<typeof GenerateCourseContentOutputSchema.omit<{ imageDataUri: true }>>> {
-    const hasGeminiKey = Boolean(process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY);
-    if (!hasGeminiKey) {
+    const apiKey = await getEffectiveGeminiKey();
+    if (!apiKey) {
         const name = input.courseName?.trim() || 'Novo Curso';
         const category = input.courseCategory?.trim() || 'geral';
         const level = input.courseLevel?.trim() || 'Todos os níveis';
@@ -132,7 +223,7 @@ export async function generateCourseContentAction(input: GenerateCourseContentIn
         } as any;
     }
     try {
-        const output = await generateCourseContent(input);
+        const output = await generateCourseContent(input, apiKey);
         return output;
     } catch (error) {
         console.error("Error in generateCourseContentAction:", error);
@@ -141,12 +232,12 @@ export async function generateCourseContentAction(input: GenerateCourseContentIn
 }
 
 export async function generateCourseImageAction(imageHint: string): Promise<string | null> {
-    const hasGeminiKey = Boolean(process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY);
-    if (!hasGeminiKey) {
+    const apiKey = await getEffectiveGeminiKey();
+    if (!apiKey) {
         return null;
     }
     try {
-        const imageDataUri = await generateCourseImage(imageHint);
+        const imageDataUri = await generateCourseImage(imageHint, apiKey);
         return imageDataUri;
     } catch (error) {
         console.error("Error in generateCourseImageAction:", error);
@@ -233,10 +324,63 @@ export async function addCourseAction(course: Omit<Course, 'status'>): Promise<{
     }
 }
 
+export async function createVacancyAction(vacancy: Omit<VacancyInsert, 'recruiter_id' | 'created_at'>): Promise<{ success: boolean; message: string; id?: string }> {
+    try {
+        const cookieStore = await cookies();
+        const appSession = cookieStore.get('app_session')?.value;
+        const session = appSession ? await verifySession(appSession) : null;
+        if (!session?.userId) {
+            return { success: false, message: 'Sessão inválida. Faça login novamente.' };
+        }
+
+        const serverSupabase = getServerSupabase();
+        const { data: roleRows, error: roleError } = await (serverSupabase as any)
+            .from('users')
+            .select('role')
+            .eq('id', session.userId)
+            .limit(1);
+        if (roleError) throw roleError;
+
+        const role = (Array.isArray(roleRows) ? roleRows[0]?.role : undefined) as string | undefined;
+        if (role !== 'recruiter' && role !== 'admin') {
+            return { success: false, message: 'Sem permissão para publicar vagas.' };
+        }
+
+        const payload = {
+            ...vacancy,
+            id: vacancy.id && String(vacancy.id).trim().length > 0 ? vacancy.id : `vac-${crypto.randomUUID()}`,
+            type: (vacancy as any)?.type ?? (vacancy as any)?.job_type,
+            recruiter_id: session.userId,
+            created_at: new Date().toISOString(),
+        };
+
+        const { data, error } = await (serverSupabase as any)
+            .from('vacancies')
+            .insert(payload)
+            .select('id')
+            .single();
+        if (error) throw error;
+
+        revalidatePath('/dashboard/recruiter/vacancies');
+        revalidatePath('/dashboard/admin/vacancies');
+        revalidatePath('/recruitment');
+
+        return { success: true, message: 'Vaga publicada com sucesso.', id: String(data?.id ?? payload.id) };
+    } catch (error: any) {
+        const supaMessage =
+            typeof error?.message === 'string' && error.message.trim().length > 0 ? error.message.trim() : null;
+        const supaDetails =
+            typeof error?.details === 'string' && error.details.trim().length > 0 ? error.details.trim() : null;
+        const message = [supaMessage, supaDetails].filter(Boolean).join(' — ') || 'Falha ao criar vaga.';
+        console.error('createVacancyAction error:', supaMessage || error);
+        return { success: false, message };
+    }
+}
+
 
 export async function generateJobContentAction(input: GenerateJobContentInput): Promise<GenerateJobContentOutput> {
-    const hasGeminiKey = Boolean(process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY);
-    if (!hasGeminiKey) {
+    const apiKey = await getEffectiveGeminiKey();
+    if (!apiKey) {
         const title = input.title?.trim() || 'Nova Vaga';
         const category = input.category?.trim() || 'geral';
         const industry = input.industry?.trim() || 'Setor';
@@ -280,7 +424,7 @@ export async function generateJobContentAction(input: GenerateJobContentInput): 
     }
 
     try {
-        const output = await generateJobContent(input);
+        const output = await generateJobContent(input, apiKey);
         return output!;
     } catch (error) {
         console.error("Error in generateJobContentAction:", error);
@@ -294,7 +438,9 @@ export async function generateVacancyContentAction(input: GenerateJobContentInpu
 
 export async function generateAssessmentTestAction(input: GenerateAssessmentTestInput): Promise<GenerateAssessmentTestOutput> {
     try {
-      const output = await generateAssessmentTest(input);
+      const apiKey = await getEffectiveGeminiKey();
+      if (!apiKey) throw new Error('IA não configurada.');
+      const output = await generateAssessmentTest(input, apiKey);
       return output;
     } catch (error) {
       console.error("Error in generateAssessmentTestAction:", error);
@@ -304,7 +450,9 @@ export async function generateAssessmentTestAction(input: GenerateAssessmentTest
 
   export async function generateModuleAssessmentAction(input: GenerateModuleAssessmentInput): Promise<GenerateModuleAssessmentOutput> {
     try {
-      const output = await generateModuleAssessment(input);
+      const apiKey = await getEffectiveGeminiKey();
+      if (!apiKey) throw new Error('IA não configurada.');
+      const output = await generateModuleAssessment(input, apiKey);
       return output;
     } catch (error) {
       console.error("Error in generateModuleAssessmentAction:", error);
@@ -397,12 +545,12 @@ export async function generateAssessmentTestAction(input: GenerateAssessmentTest
   }
 
   export async function generateEmailCampaignAction(input: GenerateEmailCampaignInput): Promise<EmailCampaignContent> {
-      const hasGeminiKey = Boolean(process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY);
-      if (!hasGeminiKey) {
+      const apiKey = await getEffectiveGeminiKey();
+      if (!apiKey) {
           return buildFallbackEmailCampaign(input);
       }
       try {
-          const output = await generateEmailCampaign(input);
+          const output = await generateEmailCampaign(input, apiKey);
           return output;
       } catch (error) {
           console.error("Error in generateEmailCampaignAction:", error);
@@ -411,7 +559,7 @@ export async function generateAssessmentTestAction(input: GenerateAssessmentTest
   }
   
   export async function getChatbotResponseAction(input: ChatbotAssistanceInput): Promise<ChatbotAssistanceOutput> {
-    const hasGeminiKey = Boolean(process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY);
+    const apiKey = await getEffectiveGeminiKey();
     const buildFallback = (q: string): ChatbotAssistanceOutput => {
         const query = (q || '').toLowerCase();
         const links: { title: string; url: string }[] = [];
@@ -424,10 +572,10 @@ export async function generateAssessmentTestAction(input: GenerateAssessmentTest
         } as ChatbotAssistanceOutput;
     };
 
-    if (!hasGeminiKey) return buildFallback(input.query);
+    if (!apiKey) return buildFallback(input.query);
 
     try {
-        const output = await chatbotAssistance(input);
+        const output = await chatbotAssistance(input, apiKey);
         return output ?? buildFallback(input.query);
     } catch (error) {
         console.error("Error in getChatbotResponseAction:", error);
@@ -454,25 +602,129 @@ export async function updateCourseStatusAction(courseId: string, newStatus: 'Ati
     }
 }
 
-// JSON file actions
-const getSiteDataFilePath = () => path.join(process.cwd(), 'src', 'lib', 'site-data.json');
+export async function deleteCourseAction(courseId: string): Promise<{ success: boolean; message: string }> {
+    try {
+        const role = await getCurrentUserRole();
+        if (role !== 'admin') return { success: false, message: 'Acesso negado.' };
+        if (!courseId || courseId.trim().length === 0) return { success: false, message: 'ID inválido.' };
+
+        const serverSupabase = getServerSupabase();
+        const { error } = await (serverSupabase as any)
+            .from('courses')
+            .delete()
+            .eq('id', courseId);
+        if (error) throw error;
+
+        revalidatePath('/dashboard/admin/courses');
+        revalidatePath('/dashboard/instructor');
+        revalidatePath('/courses');
+        revalidatePath(`/courses/${courseId}`);
+        revalidatePath(`/dashboard/courses/${courseId}`);
+        return { success: true, message: 'Curso excluído com sucesso!' };
+    } catch (error) {
+        const message = error instanceof Error ? error.message : 'Falha ao excluir curso.';
+        console.error('Error in deleteCourseAction:', error);
+        return { success: false, message };
+    }
+}
+
+export async function updateApplicationAction(input: { applicationId: string; status?: string; notes?: string }): Promise<{ success: boolean; message: string }> {
+    try {
+        const userId = await getCurrentSessionUserId();
+        if (!userId) return { success: false, message: 'Sessão inválida. Faça login novamente.' };
+        const role = await getCurrentUserRole();
+        if (role !== 'recruiter' && role !== 'admin') return { success: false, message: 'Acesso negado.' };
+        if (!input?.applicationId || input.applicationId.trim().length === 0) return { success: false, message: 'ID inválido.' };
+
+        const serverSupabase = getServerSupabase();
+        const { data: appRow, error: appErr } = await (serverSupabase as any)
+            .from('applications')
+            .select('id, job_posting_id')
+            .eq('id', input.applicationId)
+            .single();
+        if (appErr) throw appErr;
+        const jobPostingId = appRow?.job_posting_id as string | undefined;
+        if (!jobPostingId) return { success: false, message: 'Candidatura inválida.' };
+
+        if (role !== 'admin') {
+            const { data: vacancyRow, error: vacancyErr } = await (serverSupabase as any)
+                .from('vacancies')
+                .select('id, recruiter_id')
+                .eq('id', jobPostingId)
+                .single();
+            if (vacancyErr) throw vacancyErr;
+            if (String(vacancyRow?.recruiter_id || '') !== String(userId)) {
+                return { success: false, message: 'Acesso negado.' };
+            }
+        }
+
+        const updates: any = { updated_at: new Date().toISOString() };
+        if (input.status !== undefined) updates.status = input.status;
+        if (input.notes !== undefined) updates.notes = input.notes;
+
+        const { error: updErr } = await (serverSupabase as any)
+            .from('applications')
+            .update(updates)
+            .eq('id', input.applicationId);
+        if (updErr) throw updErr;
+
+        revalidatePath(`/dashboard/recruiter/vacancies/${jobPostingId}/applications`);
+        revalidatePath(`/dashboard/recruiter/vacancies/${jobPostingId}/triage`);
+        return { success: true, message: 'Candidatura atualizada.' };
+    } catch (error) {
+        const message = error instanceof Error ? error.message : 'Falha ao atualizar candidatura.';
+        console.error('Error in updateApplicationAction:', error);
+        return { success: false, message };
+    }
+}
 
 export async function getSiteData(): Promise<SiteData> {
     try {
-        const filePath = getSiteDataFilePath();
-        const fileContent = await fs.readFile(filePath, 'utf-8');
-        return JSON.parse(fileContent);
+        const serverSupabase = getServerSupabase();
+        const { data, error } = await (serverSupabase as any)
+            .from('site_data')
+            .select('data')
+            .order('updated_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+        if (error) throw error;
+        return (data?.data || {}) as SiteData;
     } catch (error) {
-        console.error('Error reading site data file:', error);
-        // Return a default structure on error
-        return { stats: [], images: [] };
+        console.error('Error reading site data:', error);
+        return {} as SiteData;
     }
 }
 
 export async function updateSiteData(newData: SiteData): Promise<{ success: boolean; message: string }> {
     try {
-        const filePath = getSiteDataFilePath();
-        await fs.writeFile(filePath, JSON.stringify(newData, null, 2), 'utf-8');
+        const session = await getSessionFromCookie();
+        const userId = session?.userId;
+        if (!userId) return { success: false, message: 'Sem sessão.' };
+
+        const serverSupabase = getServerSupabase();
+        const { data: roleRows, error: roleErr } = await serverSupabase.from('users').select('role').eq('id', userId).limit(1);
+        if (roleErr) throw roleErr;
+        const role = (Array.isArray(roleRows) ? (roleRows[0] as any)?.role : undefined) as string | undefined;
+        if (role !== 'admin') return { success: false, message: 'Acesso negado.' };
+
+        const now = new Date().toISOString();
+        const { data: existingRow, error: existingErr } = await (serverSupabase as any)
+            .from('site_data')
+            .select('id')
+            .order('updated_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+        if (existingErr) throw existingErr;
+        if (existingRow?.id) {
+            const { error: updErr } = await (serverSupabase as any)
+                .from('site_data')
+                .update({ data: newData, updated_at: now })
+                .eq('id', existingRow.id);
+            if (updErr) throw updErr;
+        } else {
+            const { error: insErr } = await (serverSupabase as any).from('site_data').insert({ data: newData, updated_at: now });
+            if (insErr) throw insErr;
+        }
         revalidatePath('/dashboard/settings');
         revalidatePath('/'); // Revalidate home page as well
         return { success: true, message: 'Dados do site atualizados com sucesso!' };

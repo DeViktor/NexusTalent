@@ -9,19 +9,17 @@ import { useRouter } from "next/navigation";
 import { useToast } from "@/hooks/use-toast";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import { useEffect, useMemo, useState } from "react";
+import { Skeleton } from "@/components/ui/skeleton";
 
-const salesData = [
-  { name: 'Jan', Receita: 4000 }, { name: 'Fev', Receita: 3000 },
-  { name: 'Mar', Receita: 5000 }, { name: 'Abr', Receita: 4500 },
-  { name: 'Mai', Receita: 6000 }, { name: 'Jun', Receita: 5500 },
-];
-
-const topCourses = [
-    { name: 'Técnicas de Apresentação', sales: 120, revenue: '€12,000' },
-    { name: 'Gestão de Projectos', sales: 98, revenue: '€19,600' },
-    { name: 'Power BI Microsoft', sales: 85, revenue: '€14,875' },
-    { name: 'Liderança e Motivação', sales: 70, revenue: '€10,500' },
-];
+type ReportApiPayload = {
+  currency: string;
+  totalRevenueMinor: number;
+  courseSalesCount: number;
+  activeSubscriptionsCount: number;
+  revenueByMonth: { name: string; revenueMinor: number }[];
+  topCourses: { id: string; name: string; sales: number; revenueMinor: number }[];
+};
 
 const KpiCard = ({ title, value, change, icon: Icon }: { title: string, value: string, change: string, icon: React.ElementType }) => (
     <Card>
@@ -39,6 +37,8 @@ const KpiCard = ({ title, value, change, icon: Icon }: { title: string, value: s
 export default function SalesReportsPage() {
     const router = useRouter();
     const { toast } = useToast();
+    const [data, setData] = useState<ReportApiPayload | null>(null);
+    const [isLoading, setIsLoading] = useState(true);
 
     const handleExport = () => {
         toast({
@@ -46,6 +46,47 @@ export default function SalesReportsPage() {
             description: "O seu relatório financeiro seria descarregado como um ficheiro CSV.",
         });
     };
+
+    useEffect(() => {
+      let active = true;
+      (async () => {
+        try {
+          const res = await fetch('/api/admin/financials/reports?months=6', { cache: 'no-store' });
+          const payload = await res.json();
+          if (!active) return;
+          if (!res.ok || !payload?.ok) {
+            throw new Error(payload?.error || 'Falha ao carregar relatórios');
+          }
+          setData(payload.data as ReportApiPayload);
+        } catch (e: any) {
+          if (!active) return;
+          toast({ variant: 'destructive', title: 'Erro ao carregar', description: e?.message || 'Não foi possível carregar relatórios.' });
+          setData(null);
+        } finally {
+          if (active) setIsLoading(false);
+        }
+      })();
+      return () => { active = false; };
+    }, [toast]);
+
+    const money = useMemo(() => {
+      const currency = (data?.currency || 'AOA').toUpperCase();
+      return new Intl.NumberFormat('pt-PT', { style: 'currency', currency, maximumFractionDigits: 0 });
+    }, [data?.currency]);
+
+    const totalRevenueLabel = data ? money.format((data.totalRevenueMinor || 0) / 100) : '—';
+
+    const salesData = useMemo(() => {
+      return (data?.revenueByMonth ?? []).map(p => ({ name: p.name, Receita: (p.revenueMinor || 0) / 100 }));
+    }, [data?.revenueByMonth]);
+
+    const topCourses = useMemo(() => {
+      return (data?.topCourses ?? []).map(c => ({
+        name: c.name,
+        sales: c.sales,
+        revenue: money.format((c.revenueMinor || 0) / 100),
+      }));
+    }, [data?.topCourses, money]);
 
     return (
         <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -67,9 +108,19 @@ export default function SalesReportsPage() {
             </div>
 
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 mb-8">
-                <KpiCard title="Receita Total" value="€81,975" change="+20.1% em relação ao mês passado" icon={DollarSign} />
-                <KpiCard title="Subscrições Ativas" value="+2,350" change="+180.1% em relação ao mês passado" icon={Users} />
-                <KpiCard title="Vendas de Cursos" value="+1,234" change="+19% em relação ao mês passado" icon={ShoppingCart} />
+                {isLoading ? (
+                  <>
+                    <Skeleton className="h-[92px] w-full" />
+                    <Skeleton className="h-[92px] w-full" />
+                    <Skeleton className="h-[92px] w-full" />
+                  </>
+                ) : (
+                  <>
+                    <KpiCard title="Receita Total" value={totalRevenueLabel} change="Compras de cursos (Stripe)" icon={DollarSign} />
+                    <KpiCard title="Subscrições Ativas" value={String(data?.activeSubscriptionsCount ?? 0)} change="Status active e período vigente" icon={Users} />
+                    <KpiCard title="Vendas de Cursos" value={String(data?.courseSalesCount ?? 0)} change="Total de compras registradas" icon={ShoppingCart} />
+                  </>
+                )}
             </div>
 
             <div className="grid lg:grid-cols-2 gap-8">
@@ -82,7 +133,7 @@ export default function SalesReportsPage() {
                         <ResponsiveContainer width="100%" height="100%">
                             <BarChart data={salesData}>
                                 <XAxis dataKey="name" stroke="#888888" fontSize={12} tickLine={false} axisLine={false} />
-                                <YAxis stroke="#888888" fontSize={12} tickLine={false} axisLine={false} tickFormatter={(value) => `€${value}`} />
+                                <YAxis stroke="#888888" fontSize={12} tickLine={false} axisLine={false} tickFormatter={(value) => money.format(Number(value))} />
                                 <Tooltip cursor={{ fill: 'hsl(var(--muted))' }} />
                                 <Bar dataKey="Receita" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} />
                             </BarChart>
@@ -95,24 +146,26 @@ export default function SalesReportsPage() {
                         <CardDescription>Os cursos que mais geraram receita este trimestre.</CardDescription>
                     </CardHeader>
                     <CardContent>
-                        <Table>
-                            <TableHeader>
-                                <TableRow>
-                                    <TableHead>Curso</TableHead>
-                                    <TableHead className="text-center">Vendas</TableHead>
-                                    <TableHead className="text-right">Receita</TableHead>
-                                </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                                {topCourses.map((course) => (
-                                <TableRow key={course.name}>
-                                    <TableCell className="font-medium">{course.name}</TableCell>
-                                    <TableCell className="text-center"><Badge variant="secondary">{course.sales}</Badge></TableCell>
-                                    <TableCell className="text-right font-bold">{course.revenue}</TableCell>
-                                </TableRow>
-                                ))}
-                            </TableBody>
-                        </Table>
+                        <div className="overflow-x-auto">
+                            <Table>
+                                <TableHeader>
+                                    <TableRow>
+                                        <TableHead>Curso</TableHead>
+                                        <TableHead className="text-center">Vendas</TableHead>
+                                        <TableHead className="text-right">Receita</TableHead>
+                                    </TableRow>
+                                </TableHeader>
+                                <TableBody>
+                                    {topCourses.map((course) => (
+                                    <TableRow key={course.name}>
+                                        <TableCell className="font-medium">{course.name}</TableCell>
+                                        <TableCell className="text-center"><Badge variant="secondary">{course.sales}</Badge></TableCell>
+                                        <TableCell className="text-right font-bold">{course.revenue}</TableCell>
+                                    </TableRow>
+                                    ))}
+                                </TableBody>
+                            </Table>
+                        </div>
                     </CardContent>
                 </Card>
             </div>

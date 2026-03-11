@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { ArrowLeft, BookOpen, Clock, Users, CheckCircle, Target, List, Video, FileText, Bot, Notebook, Save, Download, MessageSquare, VideoIcon, Calendar, Link as LinkIcon, FileUp, Presentation, Library, Inbox, Settings, ListChecks, Mail, Award, MoreHorizontal } from "lucide-react";
 import Link from "next/link";
 import React, { useState, useEffect, useCallback } from "react";
-import type { Course, CourseModule, CourseTopic, UserProfile } from "@/lib/types";
+import type { Course, CourseModule, CourseTopic } from "@/lib/types";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -16,7 +16,6 @@ import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/lib/supabase/client";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { users as mockAllUsers } from '@/lib/users';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
@@ -54,13 +53,6 @@ function useLocalStorage(key: string, initialValue: string) {
   return [storedValue, setValue] as const;
 }
 
-const mockStudents = mockAllUsers.slice(0, 5).map((user, index) => ({
-    ...user,
-    status: index < 3 ? 'Em Curso' : 'Concluído',
-    quizGrade: Math.floor(Math.random() * (95 - 60 + 1)) + 60,
-    finalGrade: index < 3 ? null : Math.floor(Math.random() * (98 - 75 + 1)) + 75,
-}));
-
 function CoursePlayerPage({ course }: { course: Course }) {
   const [activeModule, setActiveModule] = useState<CourseModule | null>(course.modules[0] || null);
   const [activeTopic, setActiveTopic] = useState<CourseTopic | null>(course.modules[0]?.topics[0] || null);
@@ -71,10 +63,11 @@ function CoursePlayerPage({ course }: { course: Course }) {
     });
   }, []);
   const { toast } = useToast();
-  const [students, setStudents] = useState(mockStudents);
-  const [selectedStudent, setSelectedStudent] = useState<UserProfile | null>(null);
+  const [students, setStudents] = useState<Array<{ id: string; student: { id: string; name: string; email: string; avatarUrl?: string | null }; status: string; quizGrade: number | null; finalGrade: number | null }>>([]);
+  const [isLoadingStudents, setIsLoadingStudents] = useState(true);
+  const [selectedEnrollment, setSelectedEnrollment] = useState<{ id: string; studentName: string } | null>(null);
   const [isGradeDialogOpen, setIsGradeDialogOpen] = useState(false);
-  const [isMessageDialogOpen, setIsMessageDialogOpen] = useState(false);
+  const [finalGradeInput, setFinalGradeInput] = useState('');
 
   const journalKey = `journal_instructor_${authUser?.id || 'anon'}_${course.id}`;
   const [journalNotes, setJournalNotes] = useLocalStorage(journalKey, '');
@@ -92,32 +85,91 @@ function CoursePlayerPage({ course }: { course: Course }) {
   };
 
   const handleDownload = (resourceName: string, url: string) => {
-    toast({
-      title: 'Download Iniciado (Simulado)',
-      description: `O download de "${resourceName}" foi iniciado.`,
-    });
+    if (!url) return;
+    window.open(url, '_blank', 'noopener,noreferrer');
+    toast({ title: 'Download Iniciado', description: `A abrir "${resourceName}".` });
   };
 
-  const handleOpenGradeDialog = (student: UserProfile) => {
-    setSelectedStudent(student);
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      setIsLoadingStudents(true);
+      try {
+        const res = await fetch(`/api/instructor/courses/${course.id}/enrollments`, { cache: 'no-store', credentials: 'include' });
+        const json = await res.json();
+        if (!res.ok || !json?.ok) throw new Error(json?.error || 'Falha ao carregar alunos.');
+        if (!active) return;
+        const rows = Array.isArray(json.enrollments) ? json.enrollments : [];
+        setStudents(
+          rows.map((r: any) => ({
+            id: String(r.id),
+            student: {
+              id: String(r.student?.id || ''),
+              name: String(r.student?.name || 'Aluno'),
+              email: String(r.student?.email || ''),
+              avatarUrl: r.student?.avatarUrl ?? null,
+            },
+            status: String(r.status || 'Em Curso'),
+            quizGrade: r.quizGrade !== null && r.quizGrade !== undefined ? Number(r.quizGrade) : null,
+            finalGrade: r.finalGrade !== null && r.finalGrade !== undefined ? Number(r.finalGrade) : null,
+          }))
+        );
+      } catch (e: any) {
+        if (!active) return;
+        setStudents([]);
+        toast({ variant: 'destructive', title: 'Erro', description: e?.message || 'Falha ao carregar alunos.' });
+      } finally {
+        if (active) setIsLoadingStudents(false);
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, [course.id, toast]);
+
+  const handleOpenGradeDialog = (enrollmentId: string, studentName: string, currentFinal: number | null) => {
+    setSelectedEnrollment({ id: enrollmentId, studentName });
+    setFinalGradeInput(currentFinal !== null && currentFinal !== undefined ? String(currentFinal) : '');
     setIsGradeDialogOpen(true);
   };
-  
-  const handleOpenMessageDialog = (student: UserProfile) => {
-    setSelectedStudent(student);
-    setIsMessageDialogOpen(true);
-  };
 
-  const handleAssignGrade = () => {
-      // Logic to assign grade
-      toast({ title: "Nota Atribuída!", description: `A nota para ${selectedStudent?.firstName} foi guardada (simulado).` });
+  const handleAssignGrade = async () => {
+      if (!selectedEnrollment) return;
+      const gradeText = finalGradeInput.trim();
+      if (!gradeText) return;
+      const n = Number(gradeText);
+      if (!Number.isFinite(n) || n < 0 || n > 100) {
+        toast({ variant: 'destructive', title: 'Erro', description: 'Nota inválida.' });
+        return;
+      }
+      const res = await fetch(`/api/instructor/enrollments/${selectedEnrollment.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ finalGrade: n, status: 'Concluído' }),
+      });
+      const json = await res.json();
+      if (!res.ok || !json?.ok) {
+        toast({ variant: 'destructive', title: 'Erro', description: json?.error || 'Falha ao guardar nota.' });
+        return;
+      }
+      const refresh = await fetch(`/api/instructor/courses/${course.id}/enrollments`, { cache: 'no-store', credentials: 'include' });
+      const refreshJson = await refresh.json();
+      if (refresh.ok && refreshJson?.ok) {
+        const rows = Array.isArray(refreshJson.enrollments) ? refreshJson.enrollments : [];
+        setStudents(
+          rows.map((r: any) => ({
+            id: String(r.id),
+            student: { id: String(r.student?.id || ''), name: String(r.student?.name || 'Aluno'), email: String(r.student?.email || ''), avatarUrl: r.student?.avatarUrl ?? null },
+            status: String(r.status || 'Em Curso'),
+            quizGrade: r.quizGrade !== null && r.quizGrade !== undefined ? Number(r.quizGrade) : null,
+            finalGrade: r.finalGrade !== null && r.finalGrade !== undefined ? Number(r.finalGrade) : null,
+          }))
+        );
+      }
+      toast({ title: "Nota Atribuída!", description: `A nota para ${selectedEnrollment.studentName} foi guardada.` });
       setIsGradeDialogOpen(false);
-  };
-  
-  const handleSendMessage = () => {
-      // Logic to send message
-      toast({ title: "Mensagem Enviada!", description: `A sua mensagem para ${selectedStudent?.firstName} foi enviada (simulado).` });
-      setIsMessageDialogOpen(false);
+      setSelectedEnrollment(null);
   };
   
   const renderMedia = () => {
@@ -135,11 +187,12 @@ function CoursePlayerPage({ course }: { course: Course }) {
 
     if (activeTopic?.videoUrl) {
       return (
-        <div className="w-full h-full bg-black flex flex-col items-center justify-center text-white text-center">
-            <VideoIcon size={64} />
-            <p className="ml-4 text-xl mt-4">Simulação do Media Player de Vídeo</p>
-            <p className="text-muted-foreground text-sm mt-2">A mostrar vídeo para: <strong className="text-white">{activeTopic?.title}</strong></p>
-        </div>
+        <iframe
+          src={activeTopic.videoUrl}
+          className="w-full h-full border-0"
+          title={activeTopic.title}
+          allowFullScreen
+        ></iframe>
       )
     }
 
@@ -209,20 +262,26 @@ function CoursePlayerPage({ course }: { course: Course }) {
                                                 </TableRow>
                                             </TableHeader>
                                             <TableBody>
-                                                {students.map(student => (
-                                                    <TableRow key={student.id}>
-                                                        <TableCell className="font-medium">{student.firstName} {student.lastName}</TableCell>
-                                                        <TableCell>{student.email}</TableCell>
-                                                        <TableCell><Badge variant={student.status === 'Concluído' ? 'default' : 'secondary'}>{student.status}</Badge></TableCell>
-                                                        <TableCell>{student.quizGrade}%</TableCell>
-                                                        <TableCell>{student.finalGrade || 'N/A'}</TableCell>
+                                                {isLoadingStudents ? (
+                                                  <TableRow>
+                                                    <TableCell colSpan={6} className="text-sm text-muted-foreground">A carregar...</TableCell>
+                                                  </TableRow>
+                                                ) : students.length === 0 ? (
+                                                  <TableRow>
+                                                    <TableCell colSpan={6} className="text-sm text-muted-foreground">Nenhum aluno inscrito.</TableCell>
+                                                  </TableRow>
+                                                ) : students.map((enrollment) => (
+                                                    <TableRow key={enrollment.id}>
+                                                        <TableCell className="font-medium">{enrollment.student.name}</TableCell>
+                                                        <TableCell>{enrollment.student.email}</TableCell>
+                                                        <TableCell><Badge variant={enrollment.status === 'Concluído' ? 'default' : 'secondary'}>{enrollment.status}</Badge></TableCell>
+                                                        <TableCell>{enrollment.quizGrade !== null ? `${enrollment.quizGrade}%` : 'N/A'}</TableCell>
+                                                        <TableCell>{enrollment.finalGrade !== null ? `${enrollment.finalGrade}%` : 'N/A'}</TableCell>
                                                         <TableCell className="text-right">
                                                             <DropdownMenu>
                                                                 <DropdownMenuTrigger asChild><Button variant="ghost" size="icon"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger>
                                                                 <DropdownMenuContent>
-                                                                    <DropdownMenuItem onSelect={() => router.push(`/dashboard/recruiter/candidates/${student.id}`)}>Ver Perfil</DropdownMenuItem>
-                                                                    <DropdownMenuItem onSelect={() => handleOpenGradeDialog(student)}>Atribuir Nota Final</DropdownMenuItem>
-                                                                    <DropdownMenuItem onSelect={() => handleOpenMessageDialog(student)}>Enviar Mensagem</DropdownMenuItem>
+                                                                    <DropdownMenuItem onSelect={() => handleOpenGradeDialog(enrollment.id, enrollment.student.name, enrollment.finalGrade)}>Atribuir Nota Final</DropdownMenuItem>
                                                                 </DropdownMenuContent>
                                                             </DropdownMenu>
                                                         </TableCell>
@@ -308,7 +367,7 @@ function CoursePlayerPage({ course }: { course: Course }) {
                                 </div>
                                 <Button>Publicar</Button>
                                 <div className="border-t pt-4 space-y-4">
-                                  <p className="text-sm text-muted-foreground text-center">Simulação de um fórum.</p>
+                                  <p className="text-sm text-muted-foreground text-center">Fórum indisponível no momento.</p>
                                 </div>
                             </CardContent>
                         </Card>
@@ -365,32 +424,15 @@ function CoursePlayerPage({ course }: { course: Course }) {
             <DialogContent>
                 <DialogHeader>
                     <DialogTitle>Atribuir Nota Final</DialogTitle>
-                    <DialogDescription>Atribua a nota final para {selectedStudent?.firstName} no curso.</DialogDescription>
+                    <DialogDescription>Atribua a nota final para {selectedEnrollment?.studentName} no curso.</DialogDescription>
                 </DialogHeader>
                 <div className="space-y-2">
                     <Label htmlFor="finalGrade">Nota Final (%)</Label>
-                    <Input id="finalGrade" type="number" min="0" max="100" />
+                    <Input id="finalGrade" type="number" min="0" max="100" value={finalGradeInput} onChange={(e) => setFinalGradeInput(e.target.value)} />
                 </div>
                 <DialogFooter>
                     <Button variant="outline" onClick={() => setIsGradeDialogOpen(false)}>Cancelar</Button>
                     <Button onClick={handleAssignGrade}>Guardar Nota</Button>
-                </DialogFooter>
-            </DialogContent>
-        </Dialog>
-
-        <Dialog open={isMessageDialogOpen} onOpenChange={setIsMessageDialogOpen}>
-            <DialogContent>
-                <DialogHeader>
-                    <DialogTitle>Enviar Mensagem</DialogTitle>
-                    <DialogDescription>Envie uma mensagem privada para {selectedStudent?.firstName}.</DialogDescription>
-                </DialogHeader>
-                 <div className="space-y-2">
-                    <Label htmlFor="messageContent">Mensagem</Label>
-                    <Textarea id="messageContent" placeholder="Escreva a sua mensagem..." rows={5} />
-                </div>
-                <DialogFooter>
-                    <Button variant="outline" onClick={() => setIsMessageDialogOpen(false)}>Cancelar</Button>
-                    <Button onClick={handleSendMessage}>Enviar Mensagem</Button>
                 </DialogFooter>
             </DialogContent>
         </Dialog>

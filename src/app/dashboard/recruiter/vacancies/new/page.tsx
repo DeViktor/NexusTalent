@@ -21,8 +21,8 @@ import { Calendar } from '@/components/ui/calendar';
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
 import { pt } from 'date-fns/locale';
-import { createVacancy, type VacancyInsert } from '@/lib/supabase/vacancy-service';
-import type { JobPosting, EducationLevel, ScreeningQuestion } from '@/lib/types';
+import { createVacancyAction } from '@/app/actions';
+import type { JobPosting, EducationLevel, ScreeningQuestion, CourseCategory } from '@/lib/types';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { useUser } from '@/lib/auth/use-user';
 
@@ -55,11 +55,6 @@ const formSchema = z.object({
 
 type FormValues = z.infer<typeof formSchema>;
 
-// Mock recruiter company data
-const recruiterProfile = {
-    companyName: 'NexusTalent Corp',
-    companyDescription: 'A NexusTalent é uma empresa líder em soluções de recrutamento e formação, conectando os melhores talentos às oportunidades mais desafiadoras do mercado.'
-}
 const educationLevels: EducationLevel[] = ['Ensino Primário', 'Ensino Médio', 'Frequência Universitária', 'Licenciatura', 'Mestrado', 'Doutoramento'];
 
 type GenerateVacancyContentOutput = GenerateJobContentOutput;
@@ -72,7 +67,20 @@ export default function NewVacancyPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { user } = useUser();
-  const courseCategories = getCourseCategories();
+  const [courseCategories, setCourseCategories] = useState<CourseCategory[]>([]);
+
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        const categories = await getCourseCategories();
+        if (active) setCourseCategories(Array.isArray(categories) ? categories : []);
+      } catch {
+        if (active) setCourseCategories([]);
+      }
+    })();
+    return () => { active = false };
+  }, []);
 
 
   const form = useForm<FormValues>({
@@ -84,8 +92,8 @@ export default function NewVacancyPage() {
       industry: '',
       numberOfVacancies: 1,
       requiredNationality: 'Angolana',
-      employerName: recruiterProfile.companyName,
-      aboutEmployer: recruiterProfile.companyDescription,
+      employerName: '',
+      aboutEmployer: '',
       hideEmployerData: false,
       showSalary: true,
       salaryRange: '',
@@ -98,6 +106,24 @@ export default function NewVacancyPage() {
     control: form.control,
     name: "screeningQuestions",
   });
+
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        const res = await fetch('/api/recruiter/company-profile', { cache: 'no-store', credentials: 'include' });
+        const json = await res.json();
+        if (!active) return;
+        if (!res.ok || !json?.ok) return;
+        const profile = json.profile;
+        if (!profile) return;
+        if (!form.getValues('employerName')) form.setValue('employerName', String(profile.companyName || ''));
+        if (!form.getValues('aboutEmployer')) form.setValue('aboutEmployer', String(profile.about || ''));
+      } catch {
+      }
+    })();
+    return () => { active = false; };
+  }, [form]);
 
 
   useEffect(() => {
@@ -220,16 +246,14 @@ export default function NewVacancyPage() {
     const companyName = formValues.employerName || recruiterProfile.companyName;
     const expiresAt = formValues.closingDate ? formValues.closingDate.toISOString() : undefined;
 
-    const payload: VacancyInsert = {
+    const payload = {
       title: formValues.title,
       description,
       company: companyName,
       location: formValues.location,
       salary_range: formValues.showSalary ? (formValues.salaryRange || undefined) : undefined,
       job_type: formValues.type,
-      created_at: new Date().toISOString(),
       expires_at: expiresAt,
-      recruiter_id: user.id,
       status: 'active',
       requirements: generatedContent.requirements ?? [],
       benefits: [],
@@ -237,9 +261,9 @@ export default function NewVacancyPage() {
     };
 
     try {
-        const created = await createVacancy(payload);
-        if (!created) {
-          throw new Error('Falha ao criar vaga no Supabase.');
+        const result = await createVacancyAction(payload as any);
+        if (!result.success) {
+          throw new Error(result.message || 'Falha ao criar vaga no Supabase.');
         }
         toast({
           title: "Vaga publicada!",
@@ -250,7 +274,7 @@ export default function NewVacancyPage() {
         toast({
             variant: "destructive",
             title: "Erro ao Publicar",
-            description: "Não foi possível publicar a vaga. Tente novamente.",
+            description: error instanceof Error ? error.message : "Não foi possível publicar a vaga. Tente novamente.",
         });
     } finally {
         setIsSaving(false);
